@@ -8,14 +8,16 @@ import {
   confirmBooking,
   createBooking,
   getSchedule,
+  categoryCounts,
   getVenue,
-  listPitches,
+  listResources,
   listVenues,
   ownedVenues,
   unblockSlot,
   updateVenueSettings,
   userBookings,
 } from './booking.js';
+import { CATEGORY_IDS } from './categories.js';
 import { DEFAULT_LANG, hasKey, LANGS, translator } from './i18n.js';
 import { addDays, isValidDate, todayLocal } from './time.js';
 import * as views from './views.js';
@@ -112,23 +114,35 @@ export function createApp({ db, now = Date.now, showDevCode = false, log = conso
   };
 
   app.get('/', (req, res) => {
-    res.send(views.homePage(req.ctx, listVenues(db)));
+    const activeCategory = CATEGORY_IDS.includes(req.query.category) ? req.query.category : null;
+    const query = typeof req.query.q === 'string' ? req.query.q.slice(0, 100) : '';
+    res.send(
+      views.homePage(req.ctx, {
+        venues: listVenues(db, { category: activeCategory, query }),
+        counts: categoryCounts(db),
+        activeCategory,
+        query,
+      }),
+    );
   });
 
   app.get('/venues/:id', (req, res) => {
     const venue = getVenue(db, Number(req.params.id));
     if (!venue) return res.status(404).send(views.notFoundPage(req.ctx));
     const dates = dateParam(req);
-    const pitches = listPitches(db, venue.id).map((p) => ({ ...p, slots: getSchedule(db, p.id, dates.date, now()) }));
-    res.send(views.venuePage(req.ctx, { venue, pitches, ...dates }));
+    const resources = listResources(db, venue.id).map((r) => ({
+      ...r,
+      slots: getSchedule(db, r.id, dates.date, now(), req.user?.id ?? null),
+    }));
+    res.send(views.venuePage(req.ctx, { venue, resources, ...dates }));
   });
 
   app.post(
     '/bookings',
     requireUser,
     act((req) => {
-      const { pitchId, date, hour } = req.body;
-      createBooking(db, { pitchId: Number(pitchId), userId: req.user.id, date, hour, now: now() });
+      const { resourceId, date, hour } = req.body;
+      createBooking(db, { resourceId: Number(resourceId), userId: req.user.id, date, hour, now: now() });
       return { ok: 'booked', to: '/me' };
     }),
   );
@@ -195,11 +209,13 @@ export function createApp({ db, now = Date.now, showDevCode = false, log = conso
 
   app.get('/owner', requireOwner, (req, res) => {
     const dates = dateParam(req);
-    const venues = ownedVenues(db, req.user).map((v) => ({
-      ...v,
-      pitches: listPitches(db, v.id).map((p) => ({ ...p, slots: getSchedule(db, p.id, dates.date, now()) })),
-    }));
-    res.send(views.ownerPage(req.ctx, { venues, ...dates }));
+    const venues = ownedVenues(db, req.user);
+    const selected = venues.find((v) => v.id === Number(req.query.venue)) ?? venues[0];
+    const venue = selected && {
+      ...selected,
+      resources: listResources(db, selected.id).map((r) => ({ ...r, slots: getSchedule(db, r.id, dates.date, now()) })),
+    };
+    res.send(views.ownerPage(req.ctx, { venues, venue, ...dates }));
   });
 
   app.post(
@@ -224,8 +240,8 @@ export function createApp({ db, now = Date.now, showDevCode = false, log = conso
     '/owner/blocks',
     requireOwner,
     act((req) => {
-      const { pitchId, date, hour } = req.body;
-      blockSlot(db, { pitchId: Number(pitchId), date, hour, user: req.user });
+      const { resourceId, date, hour } = req.body;
+      blockSlot(db, { resourceId: Number(resourceId), date, hour, user: req.user });
       return { ok: 'blocked' };
     }),
   );
@@ -250,7 +266,7 @@ export function createApp({ db, now = Date.now, showDevCode = false, log = conso
     requireOwner,
     act((req) => {
       updateVenueSettings(db, { venueId: Number(req.params.id), user: req.user, settings: req.body });
-      return { ok: 'saved', to: '/owner' };
+      return { ok: 'saved', to: `/owner?venue=${Number(req.params.id)}` };
     }),
   );
 

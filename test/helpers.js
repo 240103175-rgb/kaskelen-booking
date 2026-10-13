@@ -12,12 +12,14 @@ export function setup() {
   seed(db, NOW);
   const owner = db.prepare("SELECT * FROM users WHERE role = 'owner'").get();
   const venue = db.prepare("SELECT * FROM venues WHERE name = 'Арена Қаскелең'").get();
-  const [pitch, pitch2] = db.prepare('SELECT * FROM pitches WHERE venue_id = ? ORDER BY id').all(venue.id);
+  const [pitch, pitch2] = db.prepare('SELECT * FROM resources WHERE venue_id = ? ORDER BY id').all(venue.id);
+  const pool = db.prepare("SELECT * FROM venues WHERE category = 'pool'").get();
+  const lane = db.prepare('SELECT * FROM resources WHERE venue_id = ? ORDER BY id').get(pool.id);
   const addUser = (phone, role = 'player') => {
     db.prepare('INSERT INTO users (phone, name, role, created_at) VALUES (?, ?, ?, ?)').run(phone, 'Test', role, NOW);
     return db.prepare('SELECT * FROM users WHERE phone = ?').get(phone);
   };
   const player = addUser('+77011111111');
   const player2 = addUser('+77012222222');
-  return { db, owner, venue, pitch, pitch2, player, player2, addUser };
+  return { db, owner, venue, pitch, pitch2, pool, lane, player, player2, addUser };
 }
