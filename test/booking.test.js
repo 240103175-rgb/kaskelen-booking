@@ -182,6 +182,18 @@ describe('owner tools', () => {
     rejects(() => updateVenueSettings(db, { venueId: venue.id, user: owner, settings: { ...good, open_hour: '23' } }), 'invalid_settings');
     rejects(() => updateVenueSettings(db, { venueId: venue.id, user: owner, settings: { ...good, close_hour: '25' } }), 'invalid_settings');
     rejects(() => updateVenueSettings(db, { venueId: venue.id, user: owner, settings: { ...good, day_price: '-1' } }), 'invalid_settings');
+    for (const bad of [
+      { open_hour: '24', close_hour: '24' },
+      { close_hour: '0' },
+      { evening_start_hour: '25' },
+      { evening_start_hour: '-1' },
+      { evening_price: '1000001' },
+      { open_hour: '9.5' },
+      { day_price: 'abc' },
+    ]) {
+      rejects(() => updateVenueSettings(db, { venueId: venue.id, user: owner, settings: { ...good, ...bad } }), 'invalid_settings');
+    }
+    assert.equal(db.prepare('SELECT open_hour FROM venues WHERE id = ?').get(venue.id).open_hour, venue.open_hour);
     const updated = updateVenueSettings(db, { venueId: venue.id, user: owner, settings: good });
     assert.equal(updated.open_hour, 9);
     assert.equal(updated.evening_price, 11000);
