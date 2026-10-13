@@ -47,7 +47,10 @@ Online payment, real SMS/WhatsApp messages, reviews, team finder, non-football v
 ## 6. Technical approach
 
 - Single web application, mobile-first, server-rendered or SPA + API — decided in milestone M0 and recorded here.
+  **Decision (M0):** Node.js + Express 5, server-rendered HTML (no front-end framework), plain CSS.
 - Relational database (PostgreSQL or SQLite for local development).
+  **Decision (M0):** SQLite through the built-in `node:sqlite`; the double-booking rule is a partial unique index.
+- Booking status: `pending` (new) → `confirmed` (by owner) or `cancelled`.
 - Automated tests for every business rule in section 4.
 - Deployed to one small server; configuration through environment variables.
 
