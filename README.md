@@ -1,5 +1,7 @@
 # Kaskelen Booking
 
+[![Tests](https://github.com/240103175-rgb/kaskelen-booking/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/240103175-rgb/kaskelen-booking/actions/workflows/test.yml)
+
 Book local services in Kaskelen by the hour: football pitches, barbershops, beauty salons, massage, swimming pools, saunas, gyms and restaurants. Customers see free slots and book in one tap; venue owners confirm bookings and manage their schedule. No overbooking.
 
 Modern responsive design with automatic dark mode.
