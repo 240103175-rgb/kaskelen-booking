@@ -61,3 +61,15 @@ export function formatDate(date, lang) {
 export function formatHour(hour) {
   return `${String(hour).padStart(2, '0')}:00`;
 }
+
+const WEEKDAYS_SHORT = {
+  kk: ['Жс', 'Дс', 'Сс', 'Ср', 'Бс', 'Жм', 'Сн'],
+  ru: ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'],
+};
+
+/** Short weekday and day of month for date pickers, e.g. { weekday: 'Сс', day: 13 }. */
+export function dayLabel(date, lang) {
+  const [y, m, d] = date.split('-').map(Number);
+  const weekday = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  return { weekday: (WEEKDAYS_SHORT[lang] ?? WEEKDAYS_SHORT.kk)[weekday], day: d };
+}
