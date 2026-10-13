@@ -1,6 +1,8 @@
 # Kaskelen Booking
 
-Book football pitches in Kaskelen by the hour. Players see free slots and book in one tap; venue owners confirm bookings and manage their schedule. No double bookings.
+Book local services in Kaskelen by the hour: football pitches, barbershops, beauty salons, massage, swimming pools, saunas, gyms and restaurants. Customers see free slots and book in one tap; venue owners confirm bookings and manage their schedule. No overbooking.
+
+Modern responsive design with automatic dark mode.
 
 UI languages: Kazakh (default) and Russian.
 
@@ -13,14 +15,14 @@ npm install
 npm start
 ```
 
-Open http://localhost:3100. On first start the database is created in `data/kaskelen.db` and filled with three demo venues.
+Open http://localhost:3100. On first start the database is created in `data/kaskelen.db` and filled with 15 demo venues across all 8 categories (names and addresses are made up).
 
 ### Sign in
 
 Sign-in is by phone number and a 6-digit code. There is no real SMS yet: the code is printed in the server console, and in development it is also shown on the page.
 
-- Any Kazakhstan mobile number (`+7 7xx ...`) signs in as a **player**.
-- `+7 701 000 00 01` is the demo **venue owner** (owner panel at `/owner`).
+- Any Kazakhstan mobile number (`+7 7xx ...`) signs in as a **customer**.
+- `+7 701 000 00 01` is the demo **venue owner** of all demo venues (business panel at `/owner`).
 
 ## Tests
 
@@ -28,7 +30,7 @@ Sign-in is by phone number and a 6-digit code. There is no real SMS yet: the cod
 npm test
 ```
 
-Covers every business rule in `_docs/plan.md` §4 (double booking, 3-hour cancellation, evening price, time zone) plus sign-in and the main HTTP flows.
+Covers every business rule in `_docs/plan.md` §4 (capacity and overbooking, 3-hour cancellation, evening price, time zone) plus sign-in and the main HTTP flows.
 
 ## Configuration
 
@@ -47,6 +49,7 @@ src/
   booking.js   booking rules
   auth.js      phone + code sign-in, sessions
   db.js        SQLite schema
+  categories.js service categories
   time.js      Asia/Almaty time helpers
   i18n.js      Kazakh and Russian texts
   views.js     HTML pages
