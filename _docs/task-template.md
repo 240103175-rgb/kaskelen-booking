@@ -1,77 +1,49 @@
 # Task template
 
-Copy this into every new GitHub issue.
+Every GitHub issue goes through two shapes.
+
+## 1. New task (as moved from `_docs/tasks.md`)
 
 ```markdown
-## Title
-<Verb + object, e.g. "Add 3-hour cancellation rule for players">
+## <number>. <title>
 
-## Milestone
-M<number> — <milestone name>
+Goal: <one sentence>
 
-## Type
-feature | bug | chore
-
-## Context
-Why this task exists. Link to the section of `_docs/plan.md` it comes from.
-
-## Goal
-One or two sentences: what is true when this task is done.
-
-## User story
-As a <player | owner | admin>, I want <action>, so that <benefit>.
-
-## Acceptance criteria
-- [ ] Given <state>, when <action>, then <result>.
-- [ ] Given <state>, when <action>, then <result>.
-- [ ] Tests cover the criteria above.
-
-## Out of scope
-What this task does NOT include.
-
-## Dependencies
-- Blocked by #<issue> (or "none")
-
-## Notes for engineer
-Optional hints: files, data model, edge cases.
-
-## How QA will test
-Steps QA will follow to verify the result.
+Description: <a few sentences of what is wanted>
 ```
 
-## Example
+## 2. Groomed task (rewritten by the PM before any code is written)
 
 ```markdown
-## Title
-Add 3-hour cancellation rule for players
-
-## Milestone
-M3 — Booking
-
-## Type
-feature
-
-## Context
-`_docs/plan.md` §4: players can cancel until 3 hours before start.
-
 ## Goal
-Players can cancel their own bookings only until 3 hours before the slot starts.
 
-## User story
-As a player, I want to cancel my booking in time, so that the owner can give the slot to another team.
+One or two sentences: the end state for the user when this is done.
 
 ## Acceptance criteria
-- [ ] Given a booking starting in 4 hours, when the player cancels, then the booking status becomes `cancelled` and the slot is free.
-- [ ] Given a booking starting in 2 hours, when the player cancels, then the request is rejected with a clear message.
-- [ ] Given a booking starting in 2 hours, when the owner cancels, then it is cancelled.
-- [ ] Tests cover all three cases.
+
+**<group>**
+
+- [ ] A checkable statement. Concrete values, not "works well".
+- [ ] The awkward case too: empty input, the boundary, someone without access.
+
+**Done means**
+
+- [ ] Tests cover <the rules above>.
+- [ ] `npm test` passes.
 
 ## Out of scope
-Notifications about the cancellation.
 
-## Dependencies
-- Blocked by #<booking issue>
+- Thing we are not doing here — #<follow-up issue>.
 
-## How QA will test
-Create bookings 4 h and 2 h ahead, try cancelling each as player and as owner.
+## Constraints
+
+- Files or modules to stay within.
+- Libraries allowed / not allowed.
+- Guidelines from `AGENTS.md` that matter here.
 ```
+
+Rules for the PM:
+
+- Every acceptance criterion must be checkable by QA without asking anyone.
+- Every out-of-scope item links to an issue (create the follow-up if it does not exist).
+- Constraints name files and rules, not implementation steps.
