@@ -409,6 +409,12 @@ export function createMockService(options: MockOptions = {}): BookingApi & {
         ) {
           fail('invalid_settings', 400);
         }
+        const venueResources = resources.filter((r) => r.venueId === venue.id).map((r) => r.id);
+        for (const b of bookings) {
+          if (!venueResources.includes(b.resourceId) || !active(b) || b.startAt <= now()) continue;
+          const { hour } = localParts(b.startAt);
+          if (hour < s.openHour || hour >= s.closeHour) fail('hours_conflict', 409);
+        }
         Object.assign(venue, s);
         return summary(venue);
       }),

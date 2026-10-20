@@ -114,6 +114,24 @@ for (const [kind, makeRepo] of Object.entries(REPOSITORIES)) {
       assert.equal(updated.resourceCount, 2);
     });
 
+    it('refuses hours that would leave active future bookings outside (#41)', async () => {
+      const { svc, repo, venue, pitch, owner, player } = await make();
+      const base = { openHour: 8, closeHour: 24, dayPrice: 8000, eveningPrice: 12000, eveningStartHour: 18 };
+      const b = await svc.createBooking(player, slot(pitch, 20));
+      await svc.confirmBooking(owner, b.id);
+      await rejects(svc.updateVenueSettings(owner, venue.id, { ...base, closeHour: 20 }), 'hours_conflict');
+      await rejects(svc.updateVenueSettings(owner, venue.id, { ...base, openHour: 21 }), 'hours_conflict');
+      assert.equal((await repo.getVenue(venue.id)).closeHour, 24);
+      await svc.createBooking(player, slot(pitch, 19));
+      assert.equal((await svc.updateVenueSettings(owner, venue.id, { ...base, closeHour: 21 })).closeHour, 21);
+      await svc.cancelBooking(owner, b.id);
+      assert.equal((await svc.updateVenueSettings(owner, venue.id, { ...base, closeHour: 20 })).closeHour, 20);
+      const past = await svc.createBooking(player, slot(pitch, 12, TODAY));
+      assert.ok(past);
+      const later = createBookingService(repo, { now: () => NOW + 3 * HOUR_MS });
+      assert.equal((await later.updateVenueSettings(owner, venue.id, { ...base, openHour: 13, closeHour: 20 })).openHour, 13);
+    });
+
     it('builds a schedule with every status and the caller marker', async () => {
       const { svc, pitch, player, owner, venue } = await make();
       await svc.createBooking(player, slot(pitch, 12, TODAY));

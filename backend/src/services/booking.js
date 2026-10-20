@@ -229,6 +229,13 @@ export function createBookingService(repo, { now = Date.now } = {}) {
       ) {
         fail('invalid_settings', 400);
       }
+      // Active future bookings must stay inside the new opening hours (#41).
+      for (const resource of await repo.listResources(venue.id)) {
+        for (const b of await repo.listActiveBookings(resource.id, now() + 1, Number.MAX_SAFE_INTEGER)) {
+          const { hour } = localParts(b.startAt);
+          if (hour < s.openHour || hour >= s.closeHour) fail('hours_conflict', 409);
+        }
+      }
       return venueSummary(await withCount(await repo.updateVenue(venue.id, s)));
     },
   };

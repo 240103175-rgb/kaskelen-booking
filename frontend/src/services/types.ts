@@ -24,6 +24,7 @@ export type ErrorCode =
   | 'already_cancelled'
   | 'invalid_status'
   | 'invalid_settings'
+  | 'hours_conflict'
   | 'validation_error'
   | 'network'
   | 'server_error';

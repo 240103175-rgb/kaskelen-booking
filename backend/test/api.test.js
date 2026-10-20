@@ -109,6 +109,20 @@ for (const [kind, makeRepo] of Object.entries(REPOSITORIES)) {
       assert.equal((await call('PATCH', '/owner/venues/99999', { token: owner, body: settings })).status, 404);
     });
 
+    it('refuses an hours change that hides a booking (#41)', async () => {
+      const customer = await signIn('+77071230041');
+      const owner = await signIn('+77010000001');
+      const venues = (await call('GET', '/venues?category=football')).data;
+      const gp = venues.find((v) => v.name === 'Goal Park');
+      const [res] = (await call('GET', `/venues/${gp.id}`)).data.resources;
+      await call('POST', '/bookings', { token: customer, body: { resourceId: res.id, date: TOMORROW, hour: 20 } });
+      const settings = { openHour: 10, closeHour: 20, dayPrice: 9000, eveningPrice: 14000, eveningStartHour: 19 };
+      const r = await call('PATCH', `/owner/venues/${gp.id}`, { token: owner, body: settings });
+      assert.equal(r.status, 409);
+      assert.equal(r.data.error.code, 'hours_conflict');
+      assert.equal((await call('GET', `/venues/${gp.id}`)).data.closeHour, 24);
+    });
+
     it('covers every operation in the contract', () => {
       const seen = new Set(contract.seen().map((s) => s.split(' ').slice(0, 2).join(' ')));
       const missing = contract.operations().filter((op) => !seen.has(op));

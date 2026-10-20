@@ -206,6 +206,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /owner/venues/{venueId}/schedule:
     get:
@@ -275,7 +276,7 @@ components:
     Unauthorized: { description: unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     Forbidden: { description: forbidden, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     NotFound: { description: not_found, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-    Conflict: { description: 'taken, already_booked, blocked_slot, too_late, already_cancelled, invalid_status', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    Conflict: { description: 'taken, already_booked, blocked_slot, too_late, already_cancelled, invalid_status, hours_conflict', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     TooMany: { description: 'too_soon, too_many_attempts', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   schemas:
@@ -289,7 +290,7 @@ components:
           properties:
             code:
               type: string
-              enum: [invalid_phone, wrong_code, too_many_attempts, too_soon, unauthorized, forbidden, not_found, invalid_slot, past_slot, blocked_slot, taken, already_booked, too_late, already_cancelled, invalid_status, invalid_settings, validation_error, server_error]
+              enum: [invalid_phone, wrong_code, too_many_attempts, too_soon, unauthorized, forbidden, not_found, invalid_slot, past_slot, blocked_slot, taken, already_booked, too_late, already_cancelled, invalid_status, invalid_settings, hours_conflict, validation_error, server_error]
             message: { type: string }
 
     Lang: { type: string, enum: [kk, ru] }

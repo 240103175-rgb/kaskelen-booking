@@ -119,4 +119,18 @@ describe('mock service rules', () => {
   it('has the same dictionary keys in Kazakh and Russian', () => {
     expect(Object.keys(DICTIONARIES.ru).sort()).toEqual(Object.keys(DICTIONARIES.kk).sort());
   });
+
+  it('refuses hours that would hide an active booking (#41)', async () => {
+    const api = createMockService({ latency: 0, now: () => Date.parse('2026-10-13T05:00:00Z') });
+    const gp = (await api.listVenues({ q: 'Goal Park' }))[0];
+    const [res] = (await api.getVenue(gp.id)).resources;
+    await api.requestCode('+77071230041');
+    api.setToken((await api.verifyCode('+77071230041', api.lastCode('+77071230041')!)).token);
+    await api.createBooking({ resourceId: res.id, date: '2026-10-14', hour: 20 });
+    await api.requestCode('+77010000001');
+    api.setToken((await api.verifyCode('+77010000001', api.lastCode('+77010000001')!)).token);
+    await expect(
+      api.updateVenueSettings(gp.id, { openHour: 10, closeHour: 20, dayPrice: 9000, eveningPrice: 14000, eveningStartHour: 19 }),
+    ).rejects.toMatchObject({ code: 'hours_conflict' });
+  });
 });
