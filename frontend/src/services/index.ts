@@ -1,9 +1,10 @@
 import type { BookingApi } from './api';
+import { createHttpService } from './httpService';
 import { createMockService } from './mockService';
 
-/** Which data source the UI uses: `mock` (in-browser demo data) or `http` (the real API). */
-export const API_MODE: 'mock' | 'http' = import.meta.env.VITE_API_MODE === 'http' ? 'http' : 'mock';
+/** Data source: the real API by default; `VITE_API_MODE=mock` runs the UI on in-browser demo data. */
+export const API_MODE: 'mock' | 'http' = import.meta.env.VITE_API_MODE === 'mock' ? 'mock' : 'http';
 
 export function createApi(): BookingApi {
-  return createMockService();
+  return API_MODE === 'mock' ? createMockService() : createHttpService();
 }
