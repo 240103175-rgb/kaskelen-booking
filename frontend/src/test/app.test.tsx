@@ -133,4 +133,12 @@ describe('mock service rules', () => {
       api.updateVenueSettings(gp.id, { openHour: 10, closeHour: 20, dayPrice: 9000, eveningPrice: 14000, eveningStartHour: 19 }),
     ).rejects.toMatchObject({ code: 'hours_conflict' });
   });
+
+  it('saves the language to the signed-in profile', async () => {
+    const api = createMockService({ latency: 0 });
+    renderApp('/login?next=/', api);
+    await signIn(api, '+77071230099');
+    await userEvent.click(await screen.findByRole('button', { name: 'Language' }));
+    await waitFor(async () => expect((await api.me()).lang).toBe('ru'));
+  });
 });

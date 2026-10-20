@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { isOwner, useAuth } from '../lib/auth';
+import { useApi } from '../services/ApiContext';
 import { useI18n } from '../lib/i18n';
 import { dateRange, dayLabel, formatDate } from '../lib/time';
 import { errorKey } from '../lib/useAsync';
@@ -64,8 +65,14 @@ export function Brand() {
 
 export function Layout({ children, mock }: { children: ReactNode; mock: boolean }) {
   const { t, lang, setLang } = useI18n();
-  const { user, signOut } = useAuth();
+  const { user, signOut, setUser } = useAuth();
+  const api = useApi();
   const location = useLocation();
+  const switchLang = () => {
+    setLang(other);
+    // Keep the choice in the profile too, so it follows the user to other devices.
+    if (user) api.updateMe({ lang: other }).then(setUser).catch(() => {});
+  };
   const other = lang === 'kk' ? 'ru' : 'kk';
   const next = encodeURIComponent(location.pathname + location.search);
   return (
@@ -88,7 +95,7 @@ export function Layout({ children, mock }: { children: ReactNode; mock: boolean 
               type="button"
               className="lang-toggle"
               aria-label="Language"
-              onClick={() => setLang(other)}
+              onClick={switchLang}
             >
               {other === 'ru' ? 'РУС' : 'ҚАЗ'}
             </button>
