@@ -1,9 +1,10 @@
 import type { RetraceApi } from './api';
+import { createHttpService } from './httpService';
 import { createMockService } from './mockService';
 
-/** Data source. Iteration 1: the in-browser mock only. */
-export const API_MODE: 'mock' | 'http' = 'mock';
+/** Data source: the real API by default; `VITE_API_MODE=mock` runs the UI on in-browser demo data. */
+export const API_MODE: 'mock' | 'http' = import.meta.env.VITE_API_MODE === 'mock' ? 'mock' : 'http';
 
 export function createApi(): RetraceApi {
-  return createMockService();
+  return API_MODE === 'mock' ? createMockService() : createHttpService();
 }
