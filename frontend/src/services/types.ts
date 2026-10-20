@@ -1,132 +1,34 @@
-// Types shared by the service interface, the mock and the HTTP client.
-// They mirror the schemas in /openapi.yml.
+// Types shared by the service interface, the mock and the HTTP client. Mirror /openapi.yml.
 
-export type Lang = 'kk' | 'ru';
-export type Role = 'player' | 'owner' | 'admin';
-export type CategoryId = 'football' | 'barbershop' | 'beauty' | 'massage' | 'pool' | 'sauna' | 'gym' | 'restaurant';
-export type SlotStatus = 'free' | 'full' | 'blocked' | 'past';
-export type BookingStatus = 'pending' | 'confirmed' | 'cancelled';
+export type Role = 'investigator' | 'admin';
+export type CaseStatus = 'open' | 'in_review' | 'closed' | 'archived';
+export type EvidenceType = 'message' | 'link' | 'account' | 'payment' | 'observation';
+export type Verification = 'unverified' | 'confirmed' | 'disputed';
+export type EntityType = 'person' | 'account' | 'phone' | 'link' | 'card' | 'wallet' | 'organization';
+export type RelationshipType = 'contacted' | 'paid' | 'owns' | 'links_to' | 'same_as';
+export type RiskLevel = 'low' | 'medium' | 'high';
+export type CaseSort = 'updated' | 'created' | 'title' | 'risk';
+export type RuleId = 'credential_request' | 'urgent_payment' | 'suspicious_link' | 'personal_payment' | 'hub_entity' | 'disputed_evidence';
 
 export type ErrorCode =
-  | 'invalid_phone'
-  | 'wrong_code'
-  | 'too_many_attempts'
-  | 'too_soon'
+  | 'validation_error'
   | 'unauthorized'
+  | 'invalid_credentials'
+  | 'email_taken'
   | 'forbidden'
   | 'not_found'
-  | 'invalid_slot'
-  | 'past_slot'
-  | 'blocked_slot'
-  | 'taken'
-  | 'already_booked'
-  | 'too_late'
-  | 'already_cancelled'
-  | 'invalid_status'
-  | 'invalid_settings'
-  | 'hours_conflict'
-  | 'validation_error'
+  | 'case_locked'
+  | 'invalid_relationship'
+  | 'last_admin'
   | 'network'
   | 'server_error';
 
 export interface User {
   id: number;
-  phone: string;
-  name: string | null;
+  email: string;
+  name: string;
   role: Role;
-  lang: Lang;
-}
-
-export interface CategoryCount {
-  id: CategoryId;
-  venueCount: number;
-}
-
-export interface VenueSummary {
-  id: number;
-  category: CategoryId;
-  name: string;
-  address: string;
-  description: string | null;
-  openHour: number;
-  closeHour: number;
-  dayPrice: number;
-  eveningPrice: number;
-  eveningStartHour: number;
-  resourceCount: number;
-}
-
-export interface Resource {
-  id: number;
-  venueId: number;
-  name: string;
-  capacity: number;
-}
-
-export interface Venue extends VenueSummary {
-  resources: Resource[];
-}
-
-/** A booking as the venue owner sees it inside a slot. */
-export interface SlotBooking {
-  id: number;
-  status: BookingStatus;
-  customerName: string | null;
-  customerPhone: string;
-}
-
-export interface Slot {
-  hour: number;
-  startAt: string;
-  price: number;
-  status: SlotStatus;
-  left: number;
-  mine: boolean;
-  blockId: number | null;
-  /** Present only in the owner schedule. */
-  bookings?: SlotBooking[];
-}
-
-export interface ResourceSchedule {
-  resource: Resource;
-  slots: Slot[];
-}
-
-export interface Schedule {
-  venueId: number;
-  date: string;
-  today: string;
-  maxDate: string;
-  resources: ResourceSchedule[];
-}
-
-export interface Booking {
-  id: number;
-  resourceId: number;
-  resourceName: string;
-  venueId: number;
-  venueName: string;
-  venueAddress: string;
-  category: CategoryId;
-  startAt: string;
-  date: string;
-  hour: number;
-  price: number;
-  status: BookingStatus;
   createdAt: string;
-}
-
-export interface Block {
-  id: number;
-  resourceId: number;
-  startAt: string;
-}
-
-export interface CodeRequest {
-  phone: string;
-  expiresInSeconds: number;
-  /** Only outside production: the code itself, because no SMS is sent in the MVP. */
-  devCode?: string;
 }
 
 export interface Session {
@@ -134,18 +36,133 @@ export interface Session {
   user: User;
 }
 
-export interface VenueSettings {
-  openHour: number;
-  closeHour: number;
-  dayPrice: number;
-  eveningPrice: number;
-  eveningStartHour: number;
+export interface CaseSummary {
+  id: number;
+  title: string;
+  description: string;
+  status: CaseStatus;
+  ownerId: number;
+  ownerName: string;
+  createdAt: string;
+  updatedAt: string;
+  evidenceCount: number;
+  entityCount: number;
+  relationshipCount: number;
+  riskScore: number;
+  riskLevel: RiskLevel;
 }
 
-export interface SlotRef {
-  resourceId: number;
-  date: string;
-  hour: number;
+export interface Evidence {
+  id: number;
+  caseId: number;
+  type: EvidenceType;
+  content: string;
+  source: string | null;
+  observedOn: string | null;
+  amount: number | null;
+  verification: Verification;
+  createdAt: string;
+}
+
+export interface EvidenceInput {
+  type: EvidenceType;
+  content: string;
+  source?: string | null;
+  observedOn?: string | null;
+  amount?: number | null;
+  verification?: Verification;
+}
+
+export interface Entity {
+  id: number;
+  caseId: number;
+  type: EntityType;
+  label: string;
+  note: string | null;
+}
+
+export interface EntityInput {
+  type: EntityType;
+  label: string;
+  note?: string | null;
+}
+
+export interface Relationship {
+  id: number;
+  caseId: number;
+  sourceId: number;
+  targetId: number;
+  type: RelationshipType;
+  evidenceIds: number[];
+}
+
+export interface RelationshipInput {
+  sourceId: number;
+  targetId: number;
+  type: RelationshipType;
+  evidenceIds?: number[];
+}
+
+export interface Graph {
+  nodes: { id: number; type: EntityType; label: string; degree: number }[];
+  edges: { id: number; sourceId: number; targetId: number; type: RelationshipType; evidenceCount: number }[];
+}
+
+export interface RiskRef {
+  kind: 'evidence' | 'entity';
+  id: number;
+  label: string;
+  detail?: string;
+}
+
+export interface Risk {
+  score: number;
+  level: RiskLevel;
+  basedOnlyOnUnverified: boolean;
+  rules: { id: RuleId; weight: number; refs: RiskRef[] }[];
+}
+
+export interface ReportSummary {
+  id: number;
+  caseId: number;
+  createdAt: string;
+  createdBy: number;
+  createdByName: string | null;
+}
+
+export interface Report extends ReportSummary {
+  snapshot: {
+    case: CaseSummary;
+    evidence: Evidence[];
+    entities: Entity[];
+    relationships: Relationship[];
+    risk: Risk;
+  };
+}
+
+export interface AdminStats {
+  users: number;
+  cases: number;
+  casesByStatus: Record<CaseStatus, number>;
+  evidence: number;
+  highRiskCases: number;
+}
+
+export interface AuditEvent {
+  id: number;
+  at: string;
+  actorId: number | null;
+  actorName: string | null;
+  action: string;
+  resourceType: string;
+  resourceId: number | null;
+  caseId: number | null;
+}
+
+export interface CaseFilter {
+  q?: string;
+  status?: CaseStatus | null;
+  sort?: CaseSort;
 }
 
 export class ApiError extends Error {

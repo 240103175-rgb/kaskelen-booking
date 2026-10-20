@@ -3,10 +3,13 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
-import { DICTIONARIES } from '../lib/dictionaries';
-import { createMockService } from '../services/mockService';
+import { layout } from '../components/GraphTab';
+import { createMockService, DEMO_PASSWORD } from '../services/mockService';
 
-function renderApp(path = '/', api = createMockService({ latency: 0 })) {
+const AIGERIM = 'aigerim@retrace.test';
+const ADMIN = 'admin@retrace.test';
+
+function renderApp(path: string, api = createMockService({ latency: 0 })) {
   render(
     <MemoryRouter initialEntries={[path]}>
       <App api={api} mock router={false} />
@@ -15,13 +18,16 @@ function renderApp(path = '/', api = createMockService({ latency: 0 })) {
   return api;
 }
 
-async function signIn(api: ReturnType<typeof createMockService>, phone: string, name = '') {
+async function signIn(email: string, password = DEMO_PASSWORD) {
   const user = userEvent.setup();
-  await user.type(await screen.findByLabelText('Телефон нөмірі'), phone);
-  await user.click(screen.getByRole('button', { name: 'Код алу' }));
-  await user.type(await screen.findByLabelText('SMS-код'), api.lastCode(phone)!);
-  if (name) await user.type(screen.getByLabelText('Атыңыз'), name);
-  await user.click(screen.getByRole('button', { name: 'Кіру' }));
+  await user.type(await screen.findByLabelText('Email'), email);
+  await user.type(screen.getByLabelText('Пароль'), password);
+  await user.click(screen.getByRole('button', { name: 'Войти' }));
+}
+
+async function openCase(title: RegExp) {
+  await userEvent.click(await screen.findByText(title));
+  await screen.findByRole('tab', { name: /Граф/ });
 }
 
 beforeEach(() => {
@@ -29,116 +35,149 @@ beforeEach(() => {
   vi.spyOn(window, 'confirm').mockReturnValue(true);
 });
 
-describe('home', () => {
-  it('lists all 15 demo venues and filters by category', async () => {
-    renderApp();
-    expect(await screen.findAllByTestId('venue-card')).toHaveLength(15);
-    await userEvent.click(screen.getAllByRole('button', { name: /Барбершоп/ }).at(-1)!);
-    await waitFor(() => expect(screen.getAllByTestId('venue-card')).toHaveLength(2));
+describe('sign-in', () => {
+  it('redirects to login and back, and rejects a wrong password', async () => {
+    renderApp('/cases');
+    await signIn(AIGERIM, 'wrong-password');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Неверный email или пароль');
+    await userEvent.clear(screen.getByLabelText('Пароль'));
+    await userEvent.type(screen.getByLabelText('Пароль'), DEMO_PASSWORD);
+    await userEvent.click(screen.getByRole('button', { name: 'Войти' }));
+    expect(await screen.findAllByTestId('case-row')).toHaveLength(2);
   });
 
-  it('searches Cyrillic text case-insensitively and shows the empty state', async () => {
-    renderApp('/?q=БАССЕЙН');
-    expect(await screen.findByText('Толқын бассейні')).toBeInTheDocument();
-    renderApp('/?q=zzzz');
-    expect(await screen.findByText(/Ештеңе табылмады/)).toBeInTheDocument();
-  });
-
-  it('shows an error with a retry button when the service fails', async () => {
-    const api = createMockService({ latency: 0 });
-    api.failNext('network', 0);
-    renderApp('/', api);
-    expect(await screen.findByText(/Серверге қосылу мүмкін болмады/)).toBeInTheDocument();
-  });
-
-  it('switches to Russian', async () => {
-    renderApp();
-    await userEvent.click(await screen.findByRole('button', { name: 'Language' }));
-    expect(await screen.findByText('Категории')).toBeInTheDocument();
-  });
-});
-
-describe('booking flow', () => {
-  it('signs in, books a free slot and cancels it', async () => {
-    const api = createMockService({ latency: 0 });
-    renderApp('/login?next=/venues/2', api);
-    await signIn(api, '+77071234567', 'Айдос');
-    await screen.findAllByText('1-алаң');
-    const free = await waitFor(() => {
-      const slots = document.querySelectorAll<HTMLButtonElement>('button.slot-free');
-      expect(slots.length).toBeGreaterThan(0);
-      return slots;
-    });
-    await userEvent.click(free[free.length - 1]);
-    const card = await screen.findByTestId('booking-card');
-    expect(within(card).getByText('Растауды күтуде')).toBeInTheDocument();
-    await userEvent.click(within(card).getByRole('button', { name: 'Бас тарту' }));
-    expect(await screen.findByText('Бас тартылды')).toBeInTheDocument();
-  });
-
-  it('rejects an invalid phone number', async () => {
+  it('validates the registration password length', async () => {
     renderApp('/login');
-    await userEvent.type(await screen.findByLabelText('Телефон нөмірі'), '123');
-    await userEvent.click(screen.getByRole('button', { name: 'Код алу' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Нөмір дұрыс емес');
-  });
-
-  it('keeps customers out of the business panel', async () => {
-    const api = createMockService({ latency: 0 });
-    renderApp('/login?next=/owner', api);
-    await signIn(api, '+77071234567');
-    expect(await screen.findByText('Бет табылмады')).toBeInTheDocument();
-  });
-
-  it('lets the owner block an hour', async () => {
-    const api = createMockService({ latency: 0 });
-    renderApp('/login?next=/owner', api);
-    await signIn(api, '+77010000001');
-    const blockButtons = await screen.findAllByRole('button', { name: 'Жабу' });
-    await userEvent.click(blockButtons[blockButtons.length - 1]);
-    expect(await screen.findAllByRole('button', { name: 'Ашу' })).toHaveLength(1);
+    await userEvent.click(await screen.findByRole('button', { name: /Регистрация/ }));
+    await userEvent.type(screen.getByLabelText('Имя'), 'Тест');
+    await userEvent.type(screen.getByLabelText('Email'), 'new@retrace.test');
+    await userEvent.type(screen.getByLabelText('Пароль'), 'short');
+    await userEvent.click(screen.getByRole('button', { name: 'Создать аккаунт' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('не короче 8');
   });
 });
 
-describe('mock service rules', () => {
-  it('never exceeds capacity and allows one place per person', async () => {
-    const api = createMockService({ latency: 0, now: () => Date.parse('2026-10-13T05:00:00Z') });
-    const lane = (await api.getVenue((await api.listVenues({ category: 'pool' }))[0].id)).resources[0];
-    const slot = { resourceId: lane.id, date: '2026-10-14', hour: 9 };
-    for (let i = 0; i < 4; i++) {
-      await api.requestCode(`+7701555000${i}`);
-      api.setToken((await api.verifyCode(`+7701555000${i}`, api.lastCode(`+7701555000${i}`)!)).token);
-      await api.createBooking(slot);
-      if (i === 0) await expect(api.createBooking(slot)).rejects.toMatchObject({ code: 'already_booked' });
-    }
-    await api.requestCode('+77015550009');
-    api.setToken((await api.verifyCode('+77015550009', api.lastCode('+77015550009')!)).token);
-    await expect(api.createBooking(slot)).rejects.toMatchObject({ code: 'taken' });
+describe('cases', () => {
+  it('searches, filters and creates a case', async () => {
+    renderApp('/login?next=/cases');
+    await signIn(AIGERIM);
+    await screen.findAllByTestId('case-row');
+    await userEvent.type(screen.getByLabelText('Поиск по названию и описанию'), 'вакансия');
+    await waitFor(() => expect(screen.getAllByTestId('case-row')).toHaveLength(1));
+    await userEvent.clear(screen.getByLabelText('Поиск по названию и описанию'));
+    await userEvent.selectOptions(screen.getByLabelText('Статус'), 'closed');
+    expect(await screen.findByText(/Ничего не найдено/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Новое дело/ }));
+    await userEvent.type(screen.getByLabelText('Название'), 'AB');
+    await userEvent.click(screen.getByRole('button', { name: 'Создать' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('от 3 до 120');
+    await userEvent.type(screen.getByLabelText('Название'), 'C — новое дело');
+    await userEvent.click(screen.getByRole('button', { name: 'Создать' }));
+    expect(await screen.findByRole('heading', { name: 'ABC — новое дело' })).toBeInTheDocument();
   });
 
-  it('has the same dictionary keys in Kazakh and Russian', () => {
-    expect(Object.keys(DICTIONARIES.ru).sort()).toEqual(Object.keys(DICTIONARIES.kk).sort());
-  });
-
-  it('refuses hours that would hide an active booking (#41)', async () => {
-    const api = createMockService({ latency: 0, now: () => Date.parse('2026-10-13T05:00:00Z') });
-    const gp = (await api.listVenues({ q: 'Goal Park' }))[0];
-    const [res] = (await api.getVenue(gp.id)).resources;
-    await api.requestCode('+77071230041');
-    api.setToken((await api.verifyCode('+77071230041', api.lastCode('+77071230041')!)).token);
-    await api.createBooking({ resourceId: res.id, date: '2026-10-14', hour: 20 });
-    await api.requestCode('+77010000001');
-    api.setToken((await api.verifyCode('+77010000001', api.lastCode('+77010000001')!)).token);
-    await expect(
-      api.updateVenueSettings(gp.id, { openHour: 10, closeHour: 20, dayPrice: 9000, eveningPrice: 14000, eveningStartHour: 19 }),
-    ).rejects.toMatchObject({ code: 'hours_conflict' });
-  });
-
-  it('saves the language to the signed-in profile', async () => {
+  it('shows an error with Retry when the service fails', async () => {
     const api = createMockService({ latency: 0 });
-    renderApp('/login?next=/', api);
-    await signIn(api, '+77071230099');
-    await userEvent.click(await screen.findByRole('button', { name: 'Language' }));
-    await waitFor(async () => expect((await api.me()).lang).toBe('ru'));
+    renderApp('/login?next=/cases', api);
+    await signIn(AIGERIM);
+    await screen.findAllByTestId('case-row');
+    api.failNext('network', 0);
+    await userEvent.selectOptions(screen.getByLabelText('Статус'), 'open');
+    expect(await screen.findByText(/Не удалось связаться с сервером/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Повторить' }));
+    expect(await screen.findAllByTestId('case-row')).toHaveLength(1);
+  });
+});
+
+describe('case work', () => {
+  it('adds evidence, entities and a relationship, refuses a self-link', async () => {
+    renderApp('/login?next=/cases');
+    await signIn(AIGERIM);
+    await openCase(/OLX/);
+    await userEvent.click(screen.getByRole('tab', { name: /Доказательства/ }));
+    await userEvent.click(await screen.findByRole('button', { name: /Добавить/ }));
+    await userEvent.type(screen.getByLabelText('Содержание'), 'Покупатель удалил объявление');
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
+    await waitFor(() => expect(screen.getAllByTestId('evidence-row')).toHaveLength(4));
+
+    await userEvent.click(screen.getByRole('tab', { name: /Сущности/ }));
+    const addButtons = await screen.findAllByRole('button', { name: /Добавить/ });
+    await userEvent.click(addButtons[1]);
+    await userEvent.selectOptions(screen.getByLabelText('Куда'), screen.getAllByRole('option', { name: /Покупатель/ })[1]);
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Неверная связь');
+    await userEvent.selectOptions(screen.getByLabelText('Куда'), screen.getAllByRole('option', { name: /\+7 747/ })[1]);
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
+    await waitFor(() => expect(screen.getAllByTestId('relationship')).toHaveLength(3));
+  });
+
+  it('draws the graph and explains the risk', async () => {
+    renderApp('/login?next=/cases');
+    await signIn(AIGERIM);
+    await openCase(/вакансия/);
+    await userEvent.click(screen.getByRole('tab', { name: 'Граф' }));
+    expect(await screen.findAllByTestId('graph-node')).toHaveLength(5);
+    expect(screen.getAllByTestId('graph-edge')).toHaveLength(5);
+    await userEvent.click(screen.getByRole('button', { name: 'Аккаунт @hr_manager_astana' }));
+    expect(screen.getByText('Связей с другими:')).toHaveTextContent('3');
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Риск' }));
+    const risk = await screen.findByTestId('risk-view');
+    expect(within(risk).getByText('65')).toBeInTheDocument();
+    expect(within(risk).getByText('Высокий')).toBeInTheDocument();
+    expect(within(risk).getByText('Подозрительная ссылка')).toBeInTheDocument();
+    expect(within(risk).getAllByText(/имитация известного бренда/).length).toBe(2);
+    expect(within(risk).getByText('Это индикатор риска, а не доказательство мошенничества.')).toBeInTheDocument();
+  });
+
+  it('keeps a report unchanged after the case is renamed and locks closed cases', async () => {
+    renderApp('/login?next=/cases');
+    await signIn(AIGERIM);
+    await openCase(/вакансия/);
+    await userEvent.click(screen.getByRole('tab', { name: 'Отчёты' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Сформировать отчёт' }));
+    await screen.findByTestId('report-row');
+    await userEvent.click(screen.getByRole('button', { name: 'Изменить' }));
+    const title = screen.getByLabelText('Название');
+    await userEvent.clear(title);
+    await userEvent.type(title, 'Новое имя дела');
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
+    await screen.findByRole('heading', { name: 'Новое имя дела' });
+    await userEvent.click(within(screen.getByTestId('report-row')).getByRole('link'));
+    expect(await screen.findByRole('heading', { name: 'Фейковая вакансия оператора колл-центра' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('link', { name: /Назад/ }));
+    await userEvent.selectOptions(await screen.findByLabelText('Статус'), 'closed');
+    expect(await screen.findByText(/Дело закрыто для изменений/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('tab', { name: /Доказательства/ }));
+    await screen.findAllByTestId('evidence-row');
+    expect(screen.queryByRole('button', { name: /Добавить/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('admin', () => {
+  it('keeps investigators out', async () => {
+    renderApp('/login?next=/admin');
+    await signIn(AIGERIM);
+    expect(await screen.findByText('Нет доступа')).toBeInTheDocument();
+  });
+
+  it('shows stats, all cases, audit, and protects the last admin', async () => {
+    renderApp('/login?next=/admin');
+    await signIn(ADMIN);
+    expect(await screen.findByText('Статистика')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByTestId('case-row')).toHaveLength(3));
+    await userEvent.selectOptions(await screen.findByLabelText(`Роль ${ADMIN}`), 'investigator');
+    expect(await screen.findByText('Нельзя снять роль с последнего администратора')).toBeInTheDocument();
+    const audit = await screen.findByTestId('audit');
+    expect(within(audit).getAllByText('вход').length).toBeGreaterThan(0);
+  });
+});
+
+describe('graph layout', () => {
+  it('places 40 nodes without overlapping centres', () => {
+    const nodes = Array.from({ length: 40 }, (_, i) => ({ id: i + 1, type: 'person' as const, label: `n${i}`, degree: 0 }));
+    const pos = [...layout({ nodes, edges: [] }).values()];
+    const keys = new Set(pos.map((p) => `${p.x.toFixed(1)}:${p.y.toFixed(1)}`));
+    expect(keys.size).toBe(40);
   });
 });

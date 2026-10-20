@@ -1,13 +1,9 @@
 {
-  "name": "@kaskelen/backend",
-  "version": "0.1.0",
-  "description": "Kaskelen Booking API",
+  "name": "@retrace/backend",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "main": "src/server.js",
-  "engines": {
-    "node": ">=22.13"
-  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",

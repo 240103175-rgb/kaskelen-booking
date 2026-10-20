@@ -2,11 +2,12 @@
 export class AppError extends Error {
   constructor(code, status, message = code) {
     super(message);
+    this.name = 'AppError';
     this.code = code;
     this.status = status;
   }
 }
 
-export const fail = (code, status) => {
-  throw new AppError(code, status);
+export const fail = (code, status, message) => {
+  throw new AppError(code, status, message);
 };

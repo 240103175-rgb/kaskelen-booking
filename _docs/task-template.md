@@ -51,8 +51,8 @@ One or two sentences: the end state for the user when this is done.
 
 | # | Level | Case | Expected |
 |---|---|---|---|
-| 1 | API | POST /bookings on a full slot | 409, code `taken`, no row written |
-| 2 | Frontend | Click a free slot while signed out | navigates to /login?next=… |
+| 1 | API | POST /cases/{id}/relationships with an entity of another case | 400, code `invalid_relationship`, no row written |
+| 2 | Frontend | Open /cases while signed out | navigates to /login?next=… |
 ```
 
 ## 4. Bug (`user-test-bug`)

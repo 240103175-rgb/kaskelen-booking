@@ -1,150 +1,138 @@
 // In-memory repository. Same interface as repositories/sql.js; data is lost on restart.
-// Every method is async so services do not care which storage is behind them.
-import { AppError } from '../errors.js';
+// Pure JS (no Node APIs) so the frontend mockService can run it in the browser.
 
-const clone = (row) => (row ? structuredClone(row) : null);
+const clone = (row) => (row == null ? null : structuredClone(row));
 
 export function createMemoryRepository() {
   let nextId = 1;
-  const t = { users: [], codes: new Map(), sessions: new Map(), venues: [], resources: [], bookings: [], blocks: [] };
-  const active = (b) => b.status !== 'cancelled';
+  const t = { users: [], sessions: new Map(), cases: [], evidence: [], entities: [], relationships: [], reports: [], audit: [] };
+  const byId = (list, id) => list.find((x) => x.id === id);
+  const insert = (list, row) => {
+    const r = { id: nextId++, ...row };
+    list.push(r);
+    return clone(r);
+  };
+  const patch = (list, id, p) => {
+    const r = byId(list, id);
+    Object.assign(r, p);
+    return clone(r);
+  };
 
   return {
     kind: 'memory',
     async close() {},
 
-    // users
-    async findUserByPhone(phone) {
-      return clone(t.users.find((u) => u.phone === phone));
+    async findUserByEmail(email) {
+      return clone(t.users.find((u) => u.email === email));
     },
     async findUserById(id) {
-      return clone(t.users.find((u) => u.id === id));
+      return clone(byId(t.users, id));
     },
     async createUser(user) {
-      if (t.users.some((u) => u.phone === user.phone)) throw new Error('UNIQUE constraint failed: users.phone');
-      const row = { id: nextId++, name: null, role: 'player', lang: 'kk', ...user };
-      t.users.push(row);
-      return clone(row);
+      if (t.users.some((u) => u.email === user.email)) throw new Error('UNIQUE constraint failed: users.email');
+      return insert(t.users, user);
     },
-    async updateUser(id, patch) {
-      const row = t.users.find((u) => u.id === id);
-      Object.assign(row, patch);
-      return clone(row);
+    async updateUser(id, p) {
+      return patch(t.users, id, p);
     },
-
-    // login codes
-    async getCode(phone) {
-      return clone(t.codes.get(phone));
-    },
-    async saveCode(code) {
-      t.codes.set(code.phone, { ...code });
-    },
-    async incrementCodeAttempts(phone) {
-      const row = t.codes.get(phone);
-      if (row) row.attempts += 1;
-    },
-    async deleteCode(phone) {
-      t.codes.delete(phone);
+    async listUsers() {
+      return t.users.map(clone);
     },
 
-    // sessions
-    async createSession(session) {
-      t.sessions.set(session.token, { ...session });
+    async createSession(s) {
+      t.sessions.set(s.token, { ...s });
     },
     async findSessionUser(token, now) {
       const s = t.sessions.get(token);
-      if (!s || s.expiresAt <= now) return null;
-      return clone(t.users.find((u) => u.id === s.userId));
+      return s && s.expiresAt > now ? clone(byId(t.users, s.userId)) : null;
     },
     async deleteSession(token) {
       t.sessions.delete(token);
     },
 
-    // venues and resources
-    async countVenues() {
-      return t.venues.length;
+    async createCase(c) {
+      if (!byId(t.users, c.ownerId)) throw new Error('FOREIGN KEY constraint failed');
+      return insert(t.cases, c);
     },
-    async listVenues() {
-      return t.venues.map((v) => ({ ...v, resourceCount: t.resources.filter((r) => r.venueId === v.id).length }));
+    async getCase(id) {
+      return clone(byId(t.cases, id));
     },
-    async getVenue(id) {
-      return clone(t.venues.find((v) => v.id === id));
+    async updateCase(id, p) {
+      return patch(t.cases, id, p);
     },
-    async createVenue(venue) {
-      const row = { id: nextId++, description: null, ...venue };
-      t.venues.push(row);
-      return clone(row);
-    },
-    async updateVenue(id, patch) {
-      const row = t.venues.find((v) => v.id === id);
-      Object.assign(row, patch);
-      return clone(row);
-    },
-    async createResource(resource) {
-      if (!t.venues.some((v) => v.id === resource.venueId)) throw new Error('FOREIGN KEY constraint failed');
-      const row = { id: nextId++, ...resource };
-      t.resources.push(row);
-      return clone(row);
-    },
-    async listResources(venueId) {
-      return t.resources.filter((r) => r.venueId === venueId).map(clone);
-    },
-    async getResource(id) {
-      return clone(t.resources.find((r) => r.id === id));
+    async listCases({ ownerId } = {}) {
+      return t.cases.filter((c) => ownerId == null || c.ownerId === ownerId).map(clone);
     },
 
-    // bookings
-    /** Inserts unless the slot is full or the user already holds a place in it. */
-    async insertBookingWithinCapacity(booking, capacity) {
-      const inSlot = t.bookings.filter((b) => b.resourceId === booking.resourceId && b.startAt === booking.startAt && active(b));
-      if (inSlot.some((b) => b.userId === booking.userId)) throw new AppError('already_booked', 409);
-      if (inSlot.length >= capacity) throw new AppError('taken', 409);
-      const row = { id: nextId++, status: 'pending', cancelledBy: null, ...booking };
-      t.bookings.push(row);
-      return clone(row);
-    },
-    async getBooking(id) {
-      return clone(t.bookings.find((b) => b.id === id));
-    },
-    async updateBooking(id, patch) {
-      const row = t.bookings.find((b) => b.id === id);
-      Object.assign(row, patch);
-      return clone(row);
-    },
-    async listActiveBookings(resourceId, from, to) {
-      return t.bookings
-        .filter((b) => b.resourceId === resourceId && b.startAt >= from && b.startAt < to && active(b))
-        .sort((a, b) => a.createdAt - b.createdAt)
+    async listEvidence(caseId) {
+      return t.evidence
+        .filter((e) => e.caseId === caseId)
+        .sort((a, b) => (a.observedOn ?? '9999').localeCompare(b.observedOn ?? '9999') || a.id - b.id)
         .map(clone);
     },
-    async hasActiveBooking(resourceId, startAt) {
-      return t.bookings.some((b) => b.resourceId === resourceId && b.startAt === startAt && active(b));
+    async getEvidence(id) {
+      return clone(byId(t.evidence, id));
     },
-    async listBookingsByUser(userId) {
-      return t.bookings
-        .filter((b) => b.userId === userId)
-        .sort((a, b) => b.startAt - a.startAt)
-        .map(clone);
+    async createEvidence(e) {
+      return insert(t.evidence, e);
+    },
+    async updateEvidence(id, p) {
+      return patch(t.evidence, id, p);
+    },
+    async deleteEvidence(id) {
+      t.evidence = t.evidence.filter((e) => e.id !== id);
+      for (const r of t.relationships) r.evidenceIds = r.evidenceIds.filter((x) => x !== id);
     },
 
-    // blocks
-    async listBlocks(resourceId, from, to) {
-      return t.blocks.filter((b) => b.resourceId === resourceId && b.startAt >= from && b.startAt < to).map(clone);
+    async listEntities(caseId) {
+      return t.entities.filter((e) => e.caseId === caseId).map(clone);
     },
-    async findBlock(resourceId, startAt) {
-      return clone(t.blocks.find((b) => b.resourceId === resourceId && b.startAt === startAt));
+    async getEntity(id) {
+      return clone(byId(t.entities, id));
     },
-    async createBlock(block) {
-      if (t.blocks.some((b) => b.resourceId === block.resourceId && b.startAt === block.startAt)) throw new AppError('blocked_slot', 409);
-      const row = { id: nextId++, ...block };
-      t.blocks.push(row);
-      return clone(row);
+    async createEntity(e) {
+      return insert(t.entities, e);
     },
-    async getBlock(id) {
-      return clone(t.blocks.find((b) => b.id === id));
+    async updateEntity(id, p) {
+      return patch(t.entities, id, p);
     },
-    async deleteBlock(id) {
-      t.blocks = t.blocks.filter((b) => b.id !== id);
+    async deleteEntity(id) {
+      t.entities = t.entities.filter((e) => e.id !== id);
+      t.relationships = t.relationships.filter((r) => r.sourceId !== id && r.targetId !== id);
+    },
+
+    async listRelationships(caseId) {
+      return t.relationships.filter((r) => r.caseId === caseId).map(clone);
+    },
+    async getRelationship(id) {
+      return clone(byId(t.relationships, id));
+    },
+    async createRelationship(r) {
+      return insert(t.relationships, { ...r, evidenceIds: [...r.evidenceIds] });
+    },
+    async deleteRelationship(id) {
+      t.relationships = t.relationships.filter((r) => r.id !== id);
+    },
+
+    async createReport(r) {
+      return insert(t.reports, r);
+    },
+    async listReports(caseId) {
+      return t.reports.filter((r) => r.caseId === caseId).sort((a, b) => b.createdAt - a.createdAt || b.id - a.id).map(clone);
+    },
+    async getReport(id) {
+      return clone(byId(t.reports, id));
+    },
+
+    async addAudit(e) {
+      insert(t.audit, e);
+    },
+    async listAudit({ caseId = null, limit = 100 } = {}) {
+      return t.audit
+        .filter((e) => caseId == null || e.caseId === caseId)
+        .sort((a, b) => b.at - a.at || b.id - a.id)
+        .slice(0, limit)
+        .map(clone);
     },
   };
 }

@@ -1,48 +1,62 @@
 // The single service interface the UI uses. Implemented by mockService and httpService.
 import type {
-  Block,
-  Booking,
-  CategoryCount,
-  CategoryId,
-  CodeRequest,
-  Lang,
-  Schedule,
+  AdminStats,
+  AuditEvent,
+  CaseFilter,
+  CaseStatus,
+  CaseSummary,
+  Entity,
+  EntityInput,
+  Evidence,
+  EvidenceInput,
+  Graph,
+  Relationship,
+  RelationshipInput,
+  Report,
+  ReportSummary,
+  Risk,
+  Role,
   Session,
-  SlotRef,
   User,
-  Venue,
-  VenueSettings,
-  VenueSummary,
 } from './types';
 
-export interface VenueFilter {
-  category?: CategoryId | null;
-  q?: string;
-}
-
-export interface BookingApi {
-  /** Token used for authenticated calls; null when signed out. */
+export interface RetraceApi {
   setToken(token: string | null): void;
 
-  listCategories(): Promise<CategoryCount[]>;
-  listVenues(filter?: VenueFilter): Promise<VenueSummary[]>;
-  getVenue(id: number): Promise<Venue>;
-  getSchedule(venueId: number, date?: string): Promise<Schedule>;
-
-  requestCode(phone: string): Promise<CodeRequest>;
-  verifyCode(phone: string, code: string, name?: string): Promise<Session>;
+  register(input: { email: string; password: string; name: string }): Promise<Session>;
+  login(input: { email: string; password: string }): Promise<Session>;
   logout(): Promise<void>;
   me(): Promise<User>;
-  updateMe(patch: { lang?: Lang; name?: string }): Promise<User>;
 
-  createBooking(slot: SlotRef): Promise<Booking>;
-  myBookings(): Promise<Booking[]>;
-  cancelBooking(id: number): Promise<Booking>;
+  listCases(filter?: CaseFilter): Promise<CaseSummary[]>;
+  createCase(input: { title: string; description?: string }): Promise<CaseSummary>;
+  getCase(id: number): Promise<CaseSummary>;
+  updateCase(id: number, patch: { title?: string; description?: string; status?: CaseStatus }): Promise<CaseSummary>;
 
-  ownerVenues(): Promise<VenueSummary[]>;
-  ownerSchedule(venueId: number, date?: string): Promise<Schedule>;
-  confirmBooking(id: number): Promise<Booking>;
-  blockSlot(slot: SlotRef): Promise<Block>;
-  unblockSlot(blockId: number): Promise<void>;
-  updateVenueSettings(venueId: number, settings: VenueSettings): Promise<VenueSummary>;
+  listEvidence(caseId: number): Promise<Evidence[]>;
+  createEvidence(caseId: number, input: EvidenceInput): Promise<Evidence>;
+  updateEvidence(caseId: number, id: number, patch: Partial<EvidenceInput>): Promise<Evidence>;
+  deleteEvidence(caseId: number, id: number): Promise<void>;
+
+  listEntities(caseId: number): Promise<Entity[]>;
+  createEntity(caseId: number, input: EntityInput): Promise<Entity>;
+  updateEntity(caseId: number, id: number, patch: Partial<EntityInput>): Promise<Entity>;
+  deleteEntity(caseId: number, id: number): Promise<void>;
+
+  listRelationships(caseId: number): Promise<Relationship[]>;
+  createRelationship(caseId: number, input: RelationshipInput): Promise<Relationship>;
+  deleteRelationship(caseId: number, id: number): Promise<void>;
+
+  graph(caseId: number): Promise<Graph>;
+  risk(caseId: number): Promise<Risk>;
+
+  listReports(caseId: number): Promise<ReportSummary[]>;
+  createReport(caseId: number): Promise<Report>;
+  getReport(caseId: number, id: number): Promise<Report>;
+
+  adminStats(): Promise<AdminStats>;
+  adminCases(filter?: CaseFilter): Promise<CaseSummary[]>;
+  adminUsers(): Promise<User[]>;
+  adminSetRole(userId: number, role: Role): Promise<User>;
+  adminAudit(params?: { caseId?: number; limit?: number }): Promise<AuditEvent[]>;
 }

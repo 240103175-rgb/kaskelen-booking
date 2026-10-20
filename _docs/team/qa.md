@@ -13,8 +13,8 @@ You design the tests for one groomed issue **before** the engineer starts. You d
 1. Check that every acceptance criterion can be verified without asking anyone. If one cannot, comment and send the issue back to the PM.
 2. Comment on the issue with `## Test cases`:
    - **Positive** cases — the happy path for each criterion.
-   - **Negative** cases — invalid input, missing auth, someone else's data.
-   - **Boundary** cases — exact limits (3 hours before start, capacity reached, evening start hour, closing hour 24).
+   - **Negative** cases — invalid input, missing token, another investigator's case, admin-only endpoints.
+   - **Boundary** cases — exact limits (risk level thresholds 30 / 60, score cap 100, a hub with exactly 3 links, field length limits).
    - The **test level** for each: unit (service), API/contract (HTTP against `openapi.yml`), frontend (Vitest + Testing Library), or manual (browser).
 3. For a `user-test-bug` issue, add the regression test that reproduces the bug and must fail before the fix.
 

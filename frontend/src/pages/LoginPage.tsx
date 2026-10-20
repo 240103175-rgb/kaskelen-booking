@@ -1,39 +1,41 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { Field, FormError, Logo } from '../components/ui';
 import { useAuth } from '../lib/auth';
-import { useI18n } from '../lib/i18n';
+import { T, t } from '../lib/text';
 import { errorKey } from '../lib/useAsync';
-import { useToast } from '../lib/toast';
 import { useApi } from '../services/ApiContext';
-import type { CodeRequest } from '../services/types';
 
-/** Only same-site paths are allowed as a redirect target. */
 export function safeNext(next: string | null): string {
-  return next && next.startsWith('/') && !next.startsWith('//') ? next : '/';
+  return next && next.startsWith('/') && !next.startsWith('//') ? next : '/cases';
 }
 
 export function LoginPage() {
   const api = useApi();
-  const { t } = useI18n();
   const { user, signIn } = useAuth();
-  const toast = useToast();
   const navigate = useNavigate();
   const next = safeNext(useSearchParams()[0].get('next'));
-  const [phone, setPhone] = useState('');
-  const [request, setRequest] = useState<CodeRequest | null>(null);
-  const [code, setCode] = useState('');
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   if (user && !busy) return <Navigate to={next} replace />;
 
-  const askCode = async (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
-    setBusy(true);
     setError(null);
+    if (mode === 'register' && password.length < 8) {
+      setError('Пароль должен быть не короче 8 символов');
+      return;
+    }
+    setBusy(true);
     try {
-      setRequest(await api.requestCode(phone));
+      const session = mode === 'login' ? await api.login({ email, password }) : await api.register({ email, password, name });
+      signIn(session);
+      navigate(next, { replace: true });
     } catch (err) {
       setError(t(errorKey(err)));
     } finally {
@@ -41,109 +43,40 @@ export function LoginPage() {
     }
   };
 
-  const verify = async (e: FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      const session = await api.verifyCode(request!.phone, code, name || undefined);
-      signIn(session);
-      toast('ok', t('ok_welcome'));
-      navigate(next, { replace: true });
-    } catch (err) {
-      const key = errorKey(err);
-      if (key === 'err_too_many_attempts') {
-        setRequest(null);
-        setCode('');
-      }
-      setError(t(key));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (!request) {
-    return (
-      <section className="auth">
-        <span className="auth-icon">👋</span>
-        <h1>{t('login')}</h1>
-        <p className="muted">{t('loginLead')}</p>
-        {error && (
-          <div className="form-error" role="alert">
-            {error}
-          </div>
-        )}
-        <form className="form" onSubmit={askCode}>
-          <label>
-            {t('phone')}
+  return (
+    <div className="auth-page">
+      <section className="auth-card">
+        <Logo />
+        <p className="muted">{T.appTagline}</p>
+        <h1>{mode === 'login' ? T.login : T.register}</h1>
+        <FormError message={error} />
+        <form className="form" onSubmit={submit}>
+          {mode === 'register' && (
+            <Field label={T.name}>
+              <input value={name} onChange={(e) => setName(e.target.value)} required minLength={2} maxLength={80} autoComplete="name" />
+            </Field>
+          )}
+          <Field label={T.email}>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" autoFocus />
+          </Field>
+          <Field label={T.password}>
             <input
-              name="phone"
-              type="tel"
-              inputMode="tel"
-              autoComplete="tel"
-              placeholder="+7 701 234 56 78"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               required
-              autoFocus
-              maxLength={20}
+              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
             />
-          </label>
+          </Field>
           <button className="btn btn-primary btn-block" disabled={busy}>
-            {busy ? t('sending') : t('getCode')}
+            {busy ? T.loading : mode === 'login' ? T.signIn : T.createAccount}
           </button>
         </form>
-      </section>
-    );
-  }
-
-  return (
-    <section className="auth">
-      <span className="auth-icon">🔐</span>
-      <h1>{t('login')}</h1>
-      <p className="muted">{t('codeSent', { phone: request.phone })}</p>
-      {request.devCode && <div className="notice">{t('devCode', { code: request.devCode })}</div>}
-      {error && (
-        <div className="form-error" role="alert">
-          {error}
-        </div>
-      )}
-      <form className="form" onSubmit={verify}>
-        <label>
-          {t('code')}
-          <input
-            className="code-input"
-            name="code"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            pattern="[0-9]{6}"
-            maxLength={6}
-            placeholder="••••••"
-            value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-            required
-            autoFocus
-          />
-        </label>
-        <label>
-          {t('yourName')}
-          <input name="name" autoComplete="given-name" maxLength={60} value={name} onChange={(e) => setName(e.target.value)} />
-        </label>
-        <button className="btn btn-primary btn-block" disabled={busy}>
-          {busy ? t('sending') : t('confirmLogin')}
+        <button type="button" className="link" onClick={() => (setMode(mode === 'login' ? 'register' : 'login'), setError(null))}>
+          {mode === 'login' ? T.noAccount : T.haveAccount}
         </button>
-      </form>
-      <button
-        type="button"
-        className="auth-alt link"
-        onClick={() => {
-          setRequest(null);
-          setCode('');
-          setError(null);
-        }}
-      >
-        {t('otherNumber')}
-      </button>
-    </section>
+        <p className="hint">{T.demoHint}</p>
+      </section>
+    </div>
   );
 }

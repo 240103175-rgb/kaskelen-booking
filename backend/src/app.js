@@ -1,27 +1,25 @@
-// HTTP layer: routes, auth, JSON errors. No business rules here — those live in services/.
+// HTTP adapter: routes, auth, JSON errors. Business rules live in domain/services.js.
 import express from 'express';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { AppError } from './errors.js';
-import { createAuthService } from './services/auth.js';
-import { createBookingService } from './services/booking.js';
+import { nodeDeps } from './crypto.js';
+import { AppError } from './domain/errors.js';
+import { createServices, userDto } from './domain/services.js';
 
 /**
- * @param {object} options
- * @param {object} options.repo repository (memory or sql)
- * @param {() => number} [options.now] clock, injectable for tests
- * @param {boolean} [options.devCodes] return the login code in the response (never in production)
- * @param {string} [options.staticDir] built frontend to serve (frontend/dist)
+ * @param {object} o
+ * @param {object} o.repo repository (memory or sql)
+ * @param {() => number} [o.now]
+ * @param {string|null} [o.staticDir] built frontend (frontend/dist)
  */
-export function createApp({ repo, now = Date.now, devCodes = false, log = console.log, staticDir = null }) {
-  const auth = createAuthService(repo, { now, log });
-  const booking = createBookingService(repo, { now });
+export function createApp({ repo, now = Date.now, staticDir = null }) {
+  const svc = createServices(repo, nodeDeps(now));
   const app = express();
   app.disable('x-powered-by');
-  app.use(express.json({ limit: '10kb' }));
+  app.use(express.json({ limit: '100kb' }));
 
   const api = express.Router();
-  const wrap = (fn) => async (req, res, next) => {
+  const h = (fn) => async (req, res, next) => {
     try {
       await fn(req, res);
     } catch (err) {
@@ -33,65 +31,73 @@ export function createApp({ repo, now = Date.now, devCodes = false, log = consol
   api.use(async (req, _res, next) => {
     try {
       req.token = bearer(req);
-      req.user = await auth.userFromToken(req.token);
+      req.user = await svc.userFromToken(req.token);
       next();
     } catch (err) {
       next(err);
     }
   });
+  const open = new Set(['/auth/register', '/auth/login']);
+  api.use((req, _res, next) => (open.has(req.path) || req.user ? next() : next(new AppError('unauthorized', 401))));
 
-  const requireUser = (req, _res, next) => (req.user ? next() : next(new AppError('unauthorized', 401)));
+  const id = (v) => Number(v);
+  const filter = (q) => ({ q: q.q ?? '', status: q.status || null, sort: q.sort || 'updated' });
 
-  api.get('/categories', wrap(async (_req, res) => res.json(await booking.categoryCounts())));
-  api.get('/venues', wrap(async (req, res) => res.json(await booking.listVenues({ category: req.query.category || null, q: req.query.q ?? '' }))));
-  api.get('/venues/:id', wrap(async (req, res) => res.json(await booking.getVenue(req.params.id))));
-  api.get('/venues/:id/schedule', wrap(async (req, res) => res.json(await booking.publicSchedule(req.params.id, req.query.date, req.user))));
+  api.post('/auth/register', h(async (req, res) => res.status(201).json(await svc.register(req.body ?? {}))));
+  api.post('/auth/login', h(async (req, res) => res.json(await svc.login(req.body ?? {}))));
+  api.post('/auth/logout', h(async (req, res) => (await svc.logout(req.token), res.status(204).end())));
+  api.get('/me', (req, res) => res.json(userDto(req.user)));
 
-  api.post(
-    '/auth/code',
-    wrap(async (req, res) => {
-      const { phone, code, expiresInSeconds } = await auth.requestCode(req.body?.phone);
-      res.json({ phone, expiresInSeconds, ...(devCodes ? { devCode: code } : {}) });
-    }),
-  );
-  api.post('/auth/verify', wrap(async (req, res) => res.json(await auth.verifyCode(req.body?.phone, req.body?.code, req.body?.name))));
-  api.post('/auth/logout', requireUser, wrap(async (req, res) => (await auth.logout(req.token), res.status(204).end())));
+  api.get('/cases', h(async (req, res) => res.json(await svc.listCases(req.user, filter(req.query)))));
+  api.post('/cases', h(async (req, res) => res.status(201).json(await svc.createCase(req.user, req.body ?? {}))));
+  api.get('/cases/:caseId', h(async (req, res) => res.json(await svc.getCase(req.user, id(req.params.caseId)))));
+  api.patch('/cases/:caseId', h(async (req, res) => res.json(await svc.updateCase(req.user, id(req.params.caseId), req.body ?? {}))));
 
-  api.get('/me', requireUser, (req, res) => res.json(userDto(req.user)));
-  api.patch('/me', requireUser, wrap(async (req, res) => res.json(userDto(await auth.updateMe(req.user, req.body ?? {})))));
-  api.get('/me/bookings', requireUser, wrap(async (req, res) => res.json(await booking.myBookings(req.user))));
+  const crud = (path, list, create, update, remove) => {
+    api.get(`/cases/:caseId/${path}`, h(async (req, res) => res.json(await svc[list](req.user, id(req.params.caseId)))));
+    api.post(`/cases/:caseId/${path}`, h(async (req, res) => res.status(201).json(await svc[create](req.user, id(req.params.caseId), req.body ?? {}))));
+    if (update) {
+      api.patch(`/cases/:caseId/${path}/:itemId`, h(async (req, res) => res.json(await svc[update](req.user, id(req.params.caseId), id(req.params.itemId), req.body ?? {}))));
+    }
+    api.delete(
+      `/cases/:caseId/${path}/:itemId`,
+      h(async (req, res) => (await svc[remove](req.user, id(req.params.caseId), id(req.params.itemId)), res.status(204).end())),
+    );
+  };
+  crud('evidence', 'listEvidence', 'createEvidence', 'updateEvidence', 'deleteEvidence');
+  crud('entities', 'listEntities', 'createEntity', 'updateEntity', 'deleteEntity');
+  crud('relationships', 'listRelationships', 'createRelationship', null, 'deleteRelationship');
 
-  api.post('/bookings', requireUser, wrap(async (req, res) => res.status(201).json(await booking.createBooking(req.user, req.body ?? {}))));
-  api.post('/bookings/:id/cancel', requireUser, wrap(async (req, res) => res.json(await booking.cancelBooking(req.user, req.params.id))));
+  api.get('/cases/:caseId/graph', h(async (req, res) => res.json(await svc.graph(req.user, id(req.params.caseId)))));
+  api.get('/cases/:caseId/risk', h(async (req, res) => res.json(await svc.risk(req.user, id(req.params.caseId)))));
+  api.get('/cases/:caseId/reports', h(async (req, res) => res.json(await svc.listReports(req.user, id(req.params.caseId)))));
+  api.post('/cases/:caseId/reports', h(async (req, res) => res.status(201).json(await svc.createReport(req.user, id(req.params.caseId)))));
+  api.get('/cases/:caseId/reports/:itemId', h(async (req, res) => res.json(await svc.getReport(req.user, id(req.params.caseId), id(req.params.itemId)))));
 
-  api.get('/owner/venues', requireUser, wrap(async (req, res) => res.json(await booking.ownerVenues(req.user))));
-  api.patch('/owner/venues/:id', requireUser, wrap(async (req, res) => res.json(await booking.updateVenueSettings(req.user, req.params.id, req.body))));
-  api.get('/owner/venues/:id/schedule', requireUser, wrap(async (req, res) => res.json(await booking.ownerSchedule(req.user, req.params.id, req.query.date))));
-  api.post('/owner/bookings/:id/confirm', requireUser, wrap(async (req, res) => res.json(await booking.confirmBooking(req.user, req.params.id))));
-  api.post('/owner/blocks', requireUser, wrap(async (req, res) => res.status(201).json(await booking.blockSlot(req.user, req.body ?? {}))));
-  api.delete('/owner/blocks/:id', requireUser, wrap(async (req, res) => (await booking.unblockSlot(req.user, req.params.id), res.status(204).end())));
+  api.get('/admin/stats', h(async (req, res) => res.json(await svc.adminStats(req.user))));
+  api.get('/admin/cases', h(async (req, res) => res.json(await svc.adminCases(req.user, filter(req.query)))));
+  api.get('/admin/users', h(async (req, res) => res.json(await svc.adminUsers(req.user))));
+  api.patch('/admin/users/:itemId', h(async (req, res) => res.json(await svc.adminSetRole(req.user, id(req.params.itemId), req.body ?? {}))));
+  api.get('/admin/audit-events', h(async (req, res) => res.json(await svc.adminAudit(req.user, { caseId: req.query.caseId ?? null, limit: req.query.limit ?? 100 }))));
 
   api.use((_req, _res, next) => next(new AppError('not_found', 404)));
-
   app.use('/api/v1', api);
 
   if (staticDir && existsSync(staticDir)) {
     app.use(express.static(staticDir));
-    // Single-page app: every other GET returns index.html and the router takes over.
     app.get(/^(?!\/api\/).*/, (_req, res) => res.sendFile(join(staticDir, 'index.html')));
   }
 
   // eslint-disable-next-line no-unused-vars
-  app.use((err, _req, res, _next) => {
+  app.use((err, req, res, _next) => {
     if (err instanceof AppError) return res.status(err.status).json({ error: { code: err.code, message: err.message } });
-    if (err?.type === 'entity.parse.failed') return res.status(400).json({ error: { code: 'validation_error', message: 'Invalid JSON' } });
-    console.error(err);
+    if (err?.type === 'entity.parse.failed' || err?.type === 'entity.too.large') {
+      return res.status(400).json({ error: { code: 'validation_error', message: 'Invalid JSON body' } });
+    }
+    // Log the method and path only — never bodies (passwords) or headers (tokens).
+    console.error(`[error] ${req.method} ${req.path}:`, err?.message ?? err);
     res.status(500).json({ error: { code: 'server_error', message: 'Internal error' } });
   });
 
   return app;
-}
-
-export function userDto(u) {
-  return { id: u.id, phone: u.phone, name: u.name ?? null, role: u.role, lang: u.lang };
 }

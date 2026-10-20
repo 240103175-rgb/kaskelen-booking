@@ -38,7 +38,12 @@ export async function loadContract() {
         throw new Error(`${method} ${route.path} ${status}: ${ajv.errorsText(validate.errors)}\n${JSON.stringify(body).slice(0, 300)}`);
       }
     },
-    operations: () => routes.flatMap((r) => Object.keys(r.ops).map((m) => `${m.toUpperCase()} ${r.path}`)),
+    operations: () =>
+      routes.flatMap((r) =>
+        Object.keys(r.ops)
+          .filter((m) => ['get', 'post', 'put', 'patch', 'delete'].includes(m))
+          .map((m) => `${m.toUpperCase()} ${r.path}`),
+      ),
     seen: () => [...seen],
   };
 }
