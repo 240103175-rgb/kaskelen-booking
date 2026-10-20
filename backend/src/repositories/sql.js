@@ -1,132 +1,107 @@
 // Sequelize repository. Same interface as repositories/memory.js.
-// The database is chosen by DATABASE_URL (default: SQLite file); no SQLite-specific code below.
+// The database is chosen by DATABASE_URL (default: a SQLite file); nothing below is SQLite-specific
+// except reading the file path from a sqlite: URL.
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { DataTypes, Op, Sequelize, Transaction, UniqueConstraintError } from 'sequelize';
-import { AppError } from '../errors.js';
+import { DataTypes, Op, Sequelize } from 'sequelize';
 
-export const DEFAULT_DATABASE_URL = 'sqlite:data/kaskelen.db';
+export const DEFAULT_DATABASE_URL = 'sqlite:data/retrace.db';
 
 function defineModels(sequelize) {
-  // Fresh objects each time: Sequelize mutates attribute definitions.
-  const int = () => ({ type: DataTypes.INTEGER, allowNull: false });
-  const ms = () => ({ type: DataTypes.BIGINT, allowNull: false }); // UTC milliseconds
-  const opts = { timestamps: false };
+  // Fresh objects every time: Sequelize mutates attribute definitions.
+  const str = (len, allowNull = false) => ({ type: DataTypes.STRING(len), allowNull });
+  const txt = (allowNull = false) => ({ type: DataTypes.TEXT, allowNull });
+  const ms = () => ({ type: DataTypes.BIGINT, allowNull: false });
+  const opts = (tableName, extra = {}) => ({ tableName, timestamps: false, ...extra });
+  const fk = (name, allowNull = false) => ({ foreignKey: { name, allowNull }, onDelete: 'CASCADE' });
 
   const User = sequelize.define(
     'User',
     {
-      phone: { type: DataTypes.STRING(16), allowNull: false, unique: true },
-      name: { type: DataTypes.STRING(60), allowNull: true },
-      role: { type: DataTypes.ENUM('player', 'owner', 'admin'), allowNull: false, defaultValue: 'player' },
-      lang: { type: DataTypes.ENUM('kk', 'ru'), allowNull: false, defaultValue: 'kk' },
+      email: { ...str(120), unique: true },
+      name: str(80),
+      role: { type: DataTypes.ENUM('investigator', 'admin'), allowNull: false },
+      passwordHash: str(200),
       createdAt: ms(),
     },
-    { ...opts, tableName: 'users' },
+    opts('users'),
   );
-
-  const LoginCode = sequelize.define(
-    'LoginCode',
+  const Session = sequelize.define('Session', { token: { type: DataTypes.STRING(128), primaryKey: true }, expiresAt: ms() }, opts('sessions'));
+  const Case = sequelize.define(
+    'Case',
     {
-      phone: { type: DataTypes.STRING(16), primaryKey: true },
-      codeHash: { type: DataTypes.STRING(64), allowNull: false },
-      expiresAt: ms(),
+      title: str(120),
+      description: txt(true),
+      status: { type: DataTypes.ENUM('open', 'in_review', 'closed', 'archived'), allowNull: false },
       createdAt: ms(),
-      attempts: { ...int(), defaultValue: 0 },
+      updatedAt: ms(),
     },
-    { ...opts, tableName: 'login_codes' },
+    opts('cases', { indexes: [{ fields: ['ownerId'] }, { fields: ['status'] }] }),
   );
-
-  const Session = sequelize.define(
-    'Session',
-    { token: { type: DataTypes.STRING(64), primaryKey: true }, expiresAt: ms() },
-    { ...opts, tableName: 'sessions' },
-  );
-
-  const Venue = sequelize.define(
-    'Venue',
+  const Evidence = sequelize.define(
+    'Evidence',
     {
-      category: { type: DataTypes.STRING(20), allowNull: false },
-      name: { type: DataTypes.STRING(120), allowNull: false },
-      address: { type: DataTypes.STRING(200), allowNull: false },
-      description: { type: DataTypes.TEXT, allowNull: true },
-      openHour: { ...int(), validate: { min: 0, max: 23 } },
-      closeHour: { ...int(), validate: { min: 1, max: 24 } },
-      dayPrice: { ...int(), validate: { min: 0 } },
-      eveningPrice: { ...int(), validate: { min: 0 } },
-      eveningStartHour: { ...int(), validate: { min: 0, max: 24 } },
-    },
-    {
-      ...opts,
-      tableName: 'venues',
-      validate: {
-        openBeforeClose() {
-          if (this.openHour >= this.closeHour) throw new Error('openHour must be before closeHour');
-        },
-      },
-    },
-  );
-
-  const Resource = sequelize.define(
-    'Resource',
-    {
-      name: { type: DataTypes.STRING(120), allowNull: false },
-      capacity: { ...int(), defaultValue: 1, validate: { min: 1 } },
-    },
-    { ...opts, tableName: 'resources' },
-  );
-
-  const Booking = sequelize.define(
-    'Booking',
-    {
-      startAt: ms(),
-      price: { ...int(), validate: { min: 0 } },
-      status: { type: DataTypes.ENUM('pending', 'confirmed', 'cancelled'), allowNull: false, defaultValue: 'pending' },
+      type: { type: DataTypes.ENUM('message', 'link', 'account', 'payment', 'observation'), allowNull: false },
+      content: txt(),
+      source: str(200, true),
+      observedOn: { type: DataTypes.STRING(10), allowNull: true },
+      amount: { type: DataTypes.INTEGER, allowNull: true },
+      verification: { type: DataTypes.ENUM('unverified', 'confirmed', 'disputed'), allowNull: false },
       createdAt: ms(),
     },
+    opts('evidence', { indexes: [{ fields: ['caseId'] }] }),
+  );
+  const Entity = sequelize.define(
+    'Entity',
     {
-      ...opts,
-      tableName: 'bookings',
-      indexes: [
-        { fields: ['resourceId', 'startAt'] },
-        { fields: ['userId', 'startAt'] },
-        // One active place per person per slot, enforced by the database.
-        { unique: true, fields: ['resourceId', 'startAt', 'userId'], where: { status: { [Op.ne]: 'cancelled' } }, name: 'bookings_one_per_user_slot' },
-      ],
+      type: { type: DataTypes.ENUM('person', 'account', 'phone', 'link', 'card', 'wallet', 'organization'), allowNull: false },
+      label: str(200),
+      note: { type: DataTypes.STRING(1000), allowNull: true },
     },
+    opts('entities', { indexes: [{ fields: ['caseId'] }] }),
+  );
+  const Relationship = sequelize.define(
+    'Relationship',
+    { type: { type: DataTypes.ENUM('contacted', 'paid', 'owns', 'links_to', 'same_as'), allowNull: false } },
+    opts('relationships', { indexes: [{ fields: ['caseId'] }] }),
+  );
+  const RelationshipEvidence = sequelize.define('RelationshipEvidence', {}, opts('relationship_evidence'));
+  const Report = sequelize.define('Report', { createdAt: ms(), snapshot: txt() }, opts('reports', { indexes: [{ fields: ['caseId'] }] }));
+  const AuditEvent = sequelize.define(
+    'AuditEvent',
+    { action: str(60), resourceType: str(30), resourceId: { type: DataTypes.INTEGER, allowNull: true }, caseId: { type: DataTypes.INTEGER, allowNull: true }, at: ms() },
+    opts('audit_events', { indexes: [{ fields: ['caseId'] }, { fields: ['at'] }] }),
   );
 
-  const Block = sequelize.define(
-    'Block',
-    { startAt: ms(), reason: { type: DataTypes.STRING(200), allowNull: true } },
-    { ...opts, tableName: 'blocks', indexes: [{ unique: true, fields: ['resourceId', 'startAt'] }] },
-  );
-
-  const fk = (name) => ({ foreignKey: { name, allowNull: false }, onDelete: 'CASCADE' });
   Session.belongsTo(User, fk('userId'));
-  Venue.belongsTo(User, { as: 'owner', foreignKey: { name: 'ownerId', allowNull: true } });
-  Resource.belongsTo(Venue, fk('venueId'));
-  Venue.hasMany(Resource, fk('venueId'));
-  Booking.belongsTo(Resource, fk('resourceId'));
-  Booking.belongsTo(User, fk('userId'));
-  Booking.belongsTo(User, { as: 'canceller', foreignKey: { name: 'cancelledBy', allowNull: true } });
-  Block.belongsTo(Resource, fk('resourceId'));
+  Case.belongsTo(User, { as: 'owner', ...fk('ownerId') });
+  Evidence.belongsTo(Case, fk('caseId'));
+  Entity.belongsTo(Case, fk('caseId'));
+  Relationship.belongsTo(Case, fk('caseId'));
+  Relationship.belongsTo(Entity, { as: 'source', ...fk('sourceId') });
+  Relationship.belongsTo(Entity, { as: 'target', ...fk('targetId') });
+  RelationshipEvidence.belongsTo(Relationship, fk('relationshipId'));
+  RelationshipEvidence.belongsTo(Evidence, fk('evidenceId'));
+  Relationship.hasMany(RelationshipEvidence, { as: 'support', ...fk('relationshipId') });
+  Report.belongsTo(Case, fk('caseId'));
+  Report.belongsTo(User, { as: 'author', ...fk('createdBy') });
+  AuditEvent.belongsTo(User, { as: 'actor', foreignKey: { name: 'actorId', allowNull: true }, onDelete: 'SET NULL' });
 
-  return { User, LoginCode, Session, Venue, Resource, Booking, Block };
+  return { User, Session, Case, Evidence, Entity, Relationship, RelationshipEvidence, Report, AuditEvent };
 }
 
 const plain = (row) => (row ? row.get({ plain: true }) : null);
 const num = (row) => {
   if (!row) return null;
   // BIGINT columns come back as strings on some dialects; keep numbers everywhere.
-  for (const key of ['startAt', 'createdAt', 'expiresAt']) if (row[key] != null) row[key] = Number(row[key]);
+  for (const k of ['createdAt', 'updatedAt', 'expiresAt', 'at']) if (row[k] != null) row[k] = Number(row[k]);
   return row;
 };
 const out = (row) => num(plain(row));
 
 export async function createSqlRepository(url = process.env.DATABASE_URL || DEFAULT_DATABASE_URL) {
   const storage = url.startsWith('sqlite:') ? url.slice('sqlite:'.length) : null;
-  if (storage && storage !== ':memory:' && !storage.startsWith('/')) mkdirSync(dirname(storage), { recursive: true });
+  if (storage && storage !== ':memory:') mkdirSync(dirname(storage), { recursive: true });
   const sequelize = storage
     ? new Sequelize({ dialect: 'sqlite', storage, logging: false, ...(storage === ':memory:' ? { pool: { max: 1 } } : {}) })
     : new Sequelize(url, { logging: false });
@@ -134,17 +109,22 @@ export async function createSqlRepository(url = process.env.DATABASE_URL || DEFA
   const m = defineModels(sequelize);
   await sequelize.sync();
 
-  const activeWhere = { status: { [Op.ne]: 'cancelled' } };
+  const relOut = (r) => {
+    const { support, ...rest } = plain(r);
+    return { ...rest, evidenceIds: (support ?? []).map((s) => s.evidenceId).sort((a, b) => a - b) };
+  };
+  const relInclude = { model: m.RelationshipEvidence, as: 'support', attributes: ['evidenceId'] };
 
   return {
     kind: `sql:${sequelize.getDialect()}`,
     sequelize,
+    models: m,
     async close() {
       await sequelize.close();
     },
 
-    async findUserByPhone(phone) {
-      return out(await m.User.findOne({ where: { phone } }));
+    async findUserByEmail(email) {
+      return out(await m.User.findOne({ where: { email } }));
     },
     async findUserById(id) {
       return out(await m.User.findByPk(id));
@@ -152,26 +132,16 @@ export async function createSqlRepository(url = process.env.DATABASE_URL || DEFA
     async createUser(user) {
       return out(await m.User.create(user));
     },
-    async updateUser(id, patch) {
-      await m.User.update(patch, { where: { id } });
+    async updateUser(id, p) {
+      await m.User.update(p, { where: { id } });
       return out(await m.User.findByPk(id));
     },
-
-    async getCode(phone) {
-      return out(await m.LoginCode.findByPk(phone));
-    },
-    async saveCode(code) {
-      await m.LoginCode.upsert(code);
-    },
-    async incrementCodeAttempts(phone) {
-      await m.LoginCode.increment('attempts', { where: { phone } });
-    },
-    async deleteCode(phone) {
-      await m.LoginCode.destroy({ where: { phone } });
+    async listUsers() {
+      return (await m.User.findAll({ order: [['id', 'ASC']] })).map(out);
     },
 
-    async createSession(session) {
-      await m.Session.create(session);
+    async createSession(s) {
+      await m.Session.create(s);
     },
     async findSessionUser(token, now) {
       const s = await m.Session.findOne({ where: { token, expiresAt: { [Op.gt]: now } }, include: m.User });
@@ -181,95 +151,107 @@ export async function createSqlRepository(url = process.env.DATABASE_URL || DEFA
       await m.Session.destroy({ where: { token } });
     },
 
-    async countVenues() {
-      return m.Venue.count();
+    async createCase(c) {
+      return out(await m.Case.create(c));
     },
-    async listVenues() {
-      const venues = await m.Venue.findAll({ include: { model: m.Resource, attributes: ['id'] } });
-      return venues.map((v) => {
-        const { Resources, ...rest } = plain(v);
-        return { ...rest, resourceCount: Resources.length };
+    async getCase(id) {
+      return out(await m.Case.findByPk(id));
+    },
+    async updateCase(id, p) {
+      await m.Case.update(p, { where: { id } });
+      return out(await m.Case.findByPk(id));
+    },
+    async listCases({ ownerId } = {}) {
+      return (await m.Case.findAll({ where: ownerId == null ? {} : { ownerId }, order: [['id', 'ASC']] })).map(out);
+    },
+
+    async listEvidence(caseId) {
+      const rows = (await m.Evidence.findAll({ where: { caseId } })).map(out);
+      return rows.sort((a, b) => (a.observedOn ?? '9999').localeCompare(b.observedOn ?? '9999') || a.id - b.id);
+    },
+    async getEvidence(id) {
+      return out(await m.Evidence.findByPk(id));
+    },
+    async createEvidence(e) {
+      return out(await m.Evidence.create(e));
+    },
+    async updateEvidence(id, p) {
+      await m.Evidence.update(p, { where: { id } });
+      return out(await m.Evidence.findByPk(id));
+    },
+    async deleteEvidence(id) {
+      await sequelize.transaction(async (transaction) => {
+        await m.RelationshipEvidence.destroy({ where: { evidenceId: id }, transaction });
+        await m.Evidence.destroy({ where: { id }, transaction });
       });
     },
-    async getVenue(id) {
-      return out(await m.Venue.findByPk(id));
+
+    async listEntities(caseId) {
+      return (await m.Entity.findAll({ where: { caseId }, order: [['id', 'ASC']] })).map(out);
     },
-    async createVenue(venue) {
-      return out(await m.Venue.create(venue));
+    async getEntity(id) {
+      return out(await m.Entity.findByPk(id));
     },
-    async updateVenue(id, patch) {
-      const venue = await m.Venue.findByPk(id);
-      await venue.update(patch);
-      return out(venue);
+    async createEntity(e) {
+      return out(await m.Entity.create(e));
     },
-    async createResource(resource) {
-      return out(await m.Resource.create(resource));
+    async updateEntity(id, p) {
+      await m.Entity.update(p, { where: { id } });
+      return out(await m.Entity.findByPk(id));
     },
-    async listResources(venueId) {
-      return (await m.Resource.findAll({ where: { venueId }, order: [['id', 'ASC']] })).map(out);
-    },
-    async getResource(id) {
-      return out(await m.Resource.findByPk(id));
+    async deleteEntity(id) {
+      await sequelize.transaction(async (transaction) => {
+        const rels = await m.Relationship.findAll({ where: { [Op.or]: [{ sourceId: id }, { targetId: id }] }, attributes: ['id'], transaction });
+        const relIds = rels.map((r) => r.id);
+        if (relIds.length) {
+          await m.RelationshipEvidence.destroy({ where: { relationshipId: relIds }, transaction });
+          await m.Relationship.destroy({ where: { id: relIds }, transaction });
+        }
+        await m.Entity.destroy({ where: { id }, transaction });
+      });
     },
 
-    /** Count and insert in one IMMEDIATE transaction, so two requests cannot both take the last place. */
-    async insertBookingWithinCapacity(booking, capacity) {
-      try {
-        return await sequelize.transaction({ type: Transaction.TYPES.IMMEDIATE }, async (transaction) => {
-          const inSlot = await m.Booking.findAll({
-            where: { resourceId: booking.resourceId, startAt: booking.startAt, ...activeWhere },
-            transaction,
-          });
-          if (inSlot.some((b) => b.userId === booking.userId)) throw new AppError('already_booked', 409);
-          if (inSlot.length >= capacity) throw new AppError('taken', 409);
-          return out(await m.Booking.create(booking, { transaction }));
-        });
-      } catch (err) {
-        if (err instanceof UniqueConstraintError) throw new AppError('already_booked', 409);
-        throw err;
-      }
+    async listRelationships(caseId) {
+      return (await m.Relationship.findAll({ where: { caseId }, include: relInclude, order: [['id', 'ASC']] })).map(relOut);
     },
-    async getBooking(id) {
-      return out(await m.Booking.findByPk(id));
+    async getRelationship(id) {
+      const r = await m.Relationship.findByPk(id, { include: relInclude });
+      return r ? relOut(r) : null;
     },
-    async updateBooking(id, patch) {
-      await m.Booking.update(patch, { where: { id } });
-      return out(await m.Booking.findByPk(id));
+    async createRelationship({ evidenceIds = [], ...r }) {
+      const id = await sequelize.transaction(async (transaction) => {
+        const row = await m.Relationship.create(r, { transaction });
+        if (evidenceIds.length) {
+          await m.RelationshipEvidence.bulkCreate(evidenceIds.map((evidenceId) => ({ relationshipId: row.id, evidenceId })), { transaction });
+        }
+        return row.id;
+      });
+      return this.getRelationship(id);
     },
-    async listActiveBookings(resourceId, from, to) {
+    async deleteRelationship(id) {
+      await sequelize.transaction(async (transaction) => {
+        await m.RelationshipEvidence.destroy({ where: { relationshipId: id }, transaction });
+        await m.Relationship.destroy({ where: { id }, transaction });
+      });
+    },
+
+    async createReport(r) {
+      return out(await m.Report.create(r));
+    },
+    async listReports(caseId) {
+      return (await m.Report.findAll({ where: { caseId }, order: [['createdAt', 'DESC'], ['id', 'DESC']] })).map(out);
+    },
+    async getReport(id) {
+      return out(await m.Report.findByPk(id));
+    },
+
+    async addAudit(e) {
+      await m.AuditEvent.create(e);
+    },
+    async listAudit({ caseId = null, limit = 100 } = {}) {
       return (
-        await m.Booking.findAll({
-          where: { resourceId, startAt: { [Op.gte]: from, [Op.lt]: to }, ...activeWhere },
-          order: [['createdAt', 'ASC'], ['id', 'ASC']],
-        })
+        await m.AuditEvent.findAll({ where: caseId == null ? {} : { caseId }, order: [['at', 'DESC'], ['id', 'DESC']], limit })
       ).map(out);
-    },
-    async hasActiveBooking(resourceId, startAt) {
-      return (await m.Booking.count({ where: { resourceId, startAt, ...activeWhere } })) > 0;
-    },
-    async listBookingsByUser(userId) {
-      return (await m.Booking.findAll({ where: { userId }, order: [['startAt', 'DESC']] })).map(out);
-    },
-
-    async listBlocks(resourceId, from, to) {
-      return (await m.Block.findAll({ where: { resourceId, startAt: { [Op.gte]: from, [Op.lt]: to } } })).map(out);
-    },
-    async findBlock(resourceId, startAt) {
-      return out(await m.Block.findOne({ where: { resourceId, startAt } }));
-    },
-    async createBlock(block) {
-      try {
-        return out(await m.Block.create(block));
-      } catch (err) {
-        if (err instanceof UniqueConstraintError) throw new AppError('blocked_slot', 409);
-        throw err;
-      }
-    },
-    async getBlock(id) {
-      return out(await m.Block.findByPk(id));
-    },
-    async deleteBlock(id) {
-      await m.Block.destroy({ where: { id } });
     },
   };
 }

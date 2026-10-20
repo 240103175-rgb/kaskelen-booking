@@ -1,12 +1,12 @@
 # Brainstorm history
 
-The real brainstorm before building the app, in two parts:
+The real brainstorm before building Re:Trace:
 
-1. **ChatGPT** — choosing an app idea and a delivery plan under the course rules.
+1. **ChatGPT** — choosing the app idea and the delivery plan under the course rules.
    Full conversation: https://chatgpt.com/share/6ad6f7f3-a1b0-83eb-8725-70fc3509a32e
-2. **Claude Code** (this repository's coding agent) — the decision to build **Kaskelen Booking** and to rebuild it in the iteration order from part 1.
+2. **Claude Code** (the coding agent of this repository) — turning that plan into a scope that one developer can finish and test in 1–2 days.
 
-The user's messages are quoted verbatim. The assistant's answers are long (≈55 000 characters), so they are condensed here; the link above has them in full.
+The user's messages are quoted verbatim. The assistant's answers are long (≈55 000 characters), so they are condensed; the link above has them in full.
 
 ---
 
@@ -67,21 +67,27 @@ A full plan for Re:Trace: how the two articles combine (spec-first + AI-native i
 
 ---
 
-## Part 2 — Choosing Kaskelen Booking (Claude Code session)
+---
 
-- The app idea chosen in the end was **Kaskelen Booking**: online booking of local services in Kaskelen by the hour — football pitches, barbershops, beauty salons, massage, swimming pools, saunas, gyms and restaurants. Reason: a real local problem (bookings by phone and WhatsApp, double bookings), several user roles, non-trivial rules (capacity, cancellation window, evening prices, time zone) — and it can be finished and tested properly by one developer.
-- A first server-rendered prototype was built (issues #2–#12).
-- After reviewing the ChatGPT plan above, the founder decided: *keep Kaskelen Booking, but rebuild it with every course rule from Part 1* — React frontend on a mockService, `openapi.yml`, in-memory backend, SQLite through Sequelize ORM, connection, then real testing with `user-test-bug` issues closed by the QA engineer (issues #20–#40).
-- Deadline: 1–2 days, so the founder asked to focus on the main flows rather than every detail.
+## Part 2 — Scoping Re:Trace for delivery (Claude Code)
 
-Decisions taken from Part 1 and applied here:
+- The idea is **Re:Trace** from Part 1: organise an investigation of a suspected online scam so that every conclusion is traced back to evidence.
+- Before this, the same course workflow had been practised on another app (Kaskelen Booking). After reviewing the ChatGPT conversation the founder decided to build the idea the brainstorm actually chose: *"new folder, build it fully"*.
+- Deadline 1–2 days, one developer. Decisions taken to make it finishable without dropping any course rule:
 
-| Course rule | Where it lives in this repo |
-|---|---|
-| GitHub Issues, groom → test cases → implement → QA close | `_docs/process.md`, `_docs/team/*.md` |
-| Labels `mvp`, `post-mvp`, `user-test-bug` | GitHub labels |
-| Frontend first on a mockService | `frontend/src/services/mockService.ts` |
-| Contract first | `openapi.yml` |
-| In-memory backend, then SQLite via ORM | `backend/src/repositories/memory.js`, `sql.js` (Sequelize) |
-| Design references | `_docs/design-system.md` |
-| Real running and testing | `_docs/test-plan.md`, `user-test-bug` issues |
+| ChatGPT plan | Decision here | Why |
+|---|---|---|
+| Expo mobile app + separate React admin | One **mobile-first React web app** with an **admin section** inside | One codebase, testable in a browser in the time available; native app → `post-mvp` |
+| FastAPI + SQLAlchemy | **Express + Sequelize** (Node.js) | Same layering (routes → services → repositories → ORM), one language with the frontend |
+| 42 MVP issues | ~20 `mvp` issues, grouped by iteration | Same iteration order, less ceremony |
+| AI extraction / summaries | Out of MVP (`post-mvp`) | The core must work deterministically (Part 1 advice) |
+| Login | Email + password, roles investigator / admin | As in the ChatGPT data model |
+
+Kept exactly from Part 1:
+
+- iteration order: frontend + mockService → `openapi.yml` → in-memory backend → SQLite through ORM → connect → test;
+- labels `mvp`, `post-mvp`, `user-test-bug`; PM grooms, QA writes test cases, QA engineer verifies and closes;
+- explainable, deterministic risk rules — the score is never presented as proof;
+- report as an immutable snapshot; access checked on the backend for every request; audit log;
+- design direction: dark navy, restrained cyan, investigation workspace, not a generic SaaS landing page;
+- this file is the real history, not a reconstruction.

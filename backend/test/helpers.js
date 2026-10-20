@@ -1,12 +1,10 @@
+import { nodeDeps } from '../src/crypto.js';
+import { createServices } from '../src/domain/services.js';
+import { DEMO_PASSWORD, seed } from '../src/domain/seedData.js';
 import { createMemoryRepository } from '../src/repositories/memory.js';
 import { createSqlRepository } from '../src/repositories/sql.js';
-import { seed } from '../src/seedData.js';
-import { localToUtc } from '../src/time.js';
 
-export const TODAY = '2026-10-13';
-export const TOMORROW = '2026-10-14';
-// 10:00 in Kaskelen on TODAY.
-export const NOW = localToUtc(TODAY, 10);
+export const NOW = Date.parse('2026-10-20T08:00:00Z');
 
 /** Storage implementations every service and API test runs against. */
 export const REPOSITORIES = {
@@ -16,17 +14,16 @@ export const REPOSITORIES = {
 
 export async function setup(makeRepo = REPOSITORIES.memory) {
   const repo = await makeRepo();
-  await seed(repo, NOW);
-  const owner = await repo.findUserByPhone('+77010000001');
-  const venues = await repo.listVenues();
-  const venue = venues.find((v) => v.name === 'Арена Қаскелең');
-  const [pitch, pitch2] = await repo.listResources(venue.id);
-  const pool = venues.find((v) => v.category === 'pool');
-  const [lane] = await repo.listResources(pool.id);
-  let n = 0;
-  const addUser = (phone = `+7701999${String(n++).padStart(4, '0')}`, role = 'player') =>
-    repo.createUser({ phone, name: 'Test', role, lang: 'kk', createdAt: NOW });
-  const player = await addUser('+77011111111');
-  const player2 = await addUser('+77012222222');
-  return { repo, owner, venue, pitch, pitch2, pool, lane, player, player2, addUser };
+  const deps = nodeDeps(() => NOW);
+  await seed(repo, { hashPassword: deps.hashPassword, now: NOW });
+  const svc = createServices(repo, deps);
+  const login = async (email) => (await svc.login({ email, password: DEMO_PASSWORD })).user;
+  const users = {
+    aigerim: await repo.findUserByEmail('aigerim@retrace.test'),
+    daniyar: await repo.findUserByEmail('daniyar@retrace.test'),
+    admin: await repo.findUserByEmail('admin@retrace.test'),
+  };
+  const cases = await repo.listCases({});
+  const byTitle = (part) => cases.find((c) => c.title.includes(part));
+  return { repo, svc, deps, users, login, job: byTitle('вакансия'), olx: byTitle('OLX'), bank: byTitle('банка') };
 }

@@ -1,8 +1,8 @@
 {
-  "name": "kaskelen-booking",
+  "name": "retrace",
   "version": "1.0.0",
   "private": true,
-  "description": "Book local services in Kaskelen by the hour",
+  "description": "Re:Trace \u2014 organise investigations of suspected online scams",
   "workspaces": [
     "backend",
     "frontend"

@@ -1,86 +1,70 @@
-# Project plan — Kaskelen Booking
+# Re:Trace — product specification
 
 ## 1. Goal
 
-A mobile-first web app where people in Kaskelen book local services by the hour — football pitches, barbershops, beauty salons, massage, swimming pools, saunas (баня), gyms and restaurants — and venue owners manage their schedule, with no overbooking.
+Re:Trace helps a person organise an investigation of a suspected online scam — a fake job offer, a "too good" marketplace deal, a phishing message — so that every conclusion can be traced back to the evidence behind it.
 
-> Scope change (founder decision): the MVP started with football pitches only and was extended to all eight categories above.
+The user opens a **case**, records **evidence** (messages, links, accounts, payments, observations), extracts the **entities** involved (people, accounts, phones, links, cards, wallets), connects them with **relationships** backed by evidence, gets an **explainable risk assessment**, and produces a **report**.
+
+> Re:Trace organises an investigation. It does **not** prove guilt, does not access other people's accounts and does not verify the truth of the data entered. A risk score is an indicator, never proof.
 
 ## 2. Users
 
 | Role | Needs |
 |---|---|
-| **Customer** | Find a place by category, book a free slot fast, see and cancel own bookings |
-| **Venue owner / admin** | See the day's schedule, confirm or cancel bookings, block slots, set prices and hours |
-| **Platform admin** | Add venues and owners |
+| **Investigator** | Create cases, add evidence and entities, link them, see why a case looks risky, export a report. Sees only their own cases. |
+| **Admin** | See all cases and statistics, change user roles, read the audit log. |
 
 ## 3. MVP scope
 
 ### In scope
-1. **Sign-in by phone** — phone number + 6-digit one-time code (code is logged to the server console in MVP).
-2. **Venue list** — venues grouped by category (football, barbershop, beauty, massage, pool, sauna, gym, restaurant), with search by name or address.
-3. **Schedule view** — for each resource of a venue (pitch, barber, massage room, pool lane, table…) and a chosen date, show 1-hour slots inside opening hours with status: free / full / blocked / past, and places left when capacity > 1.
-4. **Booking** — a customer books a free slot; the system never lets bookings exceed the resource capacity.
-5. **My bookings** — a customer sees upcoming and past bookings; cancels up to 3 hours before start.
-6. **Owner dashboard** — owner picks one of their venues and sees bookings for its resources by day; confirms, cancels, blocks or unblocks slots.
-7. **Venue settings** — opening hours, day price, evening price, evening start time.
-8. **Languages** — UI in Kazakh and Russian, switchable.
+1. **Sign-in** — email + password, bearer token; roles investigator / admin; registration of a new investigator.
+2. **Cases** — create, edit, change status (open → in review → closed, or archived), list with search, status filter and sorting.
+3. **Evidence** — type (message, link, account, payment, observation), content, source, observed date, verification status (unverified / confirmed / disputed).
+4. **Entities** — type (person, account, phone, link, card, wallet, organisation), label, note.
+5. **Relationships** — source entity → target entity with a type (contacted, paid, owns, links to, same as) and the evidence that supports it.
+6. **Graph** — the case's entities and relationships drawn as a graph; selecting a node shows its details and links.
+7. **Risk assessment** — deterministic rules with fixed weights; every triggered rule lists the evidence or entities that triggered it; score 0–100 and level low / medium / high; a clear disclaimer.
+8. **Reports** — a snapshot of the case (summary, evidence, entities, relationships, risk, limitations) saved at generation time; later edits do not change an existing report; printable.
+9. **Admin** — all cases, statistics, users and roles, audit log.
+10. **Audit** — every change records who, what, which resource, when; no passwords or tokens in the log.
 
 ### Out of scope (MVP)
-Online payment, real SMS/WhatsApp messages, reviews, team finder, services longer or shorter than 1 hour, native mobile apps.
+Scanning other people's accounts, bank integrations, identity verification, AI extraction or summaries, file uploads, real-time collaboration, notifications, native mobile apps.
 
 ## 4. Business rules
 
-- Slots are 1 hour long and start on the hour.
-- A slot can be booked only if it is free, not blocked, and in the future.
-- Each resource has a capacity (1 for a pitch, barber or table; more for a pool lane or gym). Active bookings per slot never exceed it (enforced in the database, not only in the UI).
-- One customer can hold only one place per resource per slot.
-- Customer cancellation is allowed until 3 hours before the slot start; after that only the owner can cancel.
-- Price of a slot = evening price if the slot starts at or after the venue's evening start time, otherwise day price.
-- All times are in Asia/Almaty time zone.
+- An investigator can read and change only their own cases; an admin can read all cases. Checked on the backend for every request.
+- Archived and closed cases are read-only except for changing the status back to open.
+- A relationship needs two different entities of the same case; supporting evidence must belong to the same case.
+- Deleting an entity deletes its relationships; deleting evidence removes it from relationships' support lists.
+- Risk rules (weights add up, capped at 100):
 
-## 5. Data model (draft)
+| Rule | Weight | Triggered by |
+|---|---|---|
+| `credential_request` | 25 | message evidence asking for a code, password, PIN or CVV |
+| `urgent_payment` | 20 | message evidence combining urgency with payment / prepayment |
+| `suspicious_link` | 20 | link evidence or link entity that is not HTTPS, uses an IP address, a URL shortener, punycode, or imitates a known brand domain |
+| `personal_payment` | 15 | payment evidence or a card / wallet entity that receives money |
+| `hub_entity` | 10 | an entity connected to 3 or more other entities |
+| `disputed_evidence` | 10 | evidence marked disputed |
 
-- **User** — id, phone, name, role (player = customer / owner / admin), language
-- **Venue** — id, category, name, address, description, photo, opening time, closing time, day price, evening price, evening start, owner id
-- **Resource** — id, venue id, name, capacity (a pitch, barber, room, pool lane, table…)
-- **Booking** — id, resource id, user id, start time, price, status (pending / confirmed / cancelled), cancelled by, created at
-- **Block** — id, resource id, start time, reason
+  Level: low < 30 ≤ medium < 60 ≤ high. If no evidence is confirmed, the assessment says so ("based only on unverified evidence"). Absence of triggered rules is **not** shown as "safe".
+- A report is an immutable snapshot.
+- Passwords are stored as scrypt hashes; tokens expire after 7 days.
+- Demo data is synthetic and labelled as such.
+
+## 5. Data model
+
+See `_docs/architecture.md`.
 
 ## 6. Technical approach
 
-See `_docs/architecture.md`. In short:
+Built in the iteration order required by the course: React frontend on a `mockService` → `openapi.yml` → Express API with in-memory repositories → Sequelize ORM over SQLite → connect frontend and backend → real testing.
 
-- **Frontend:** React + TypeScript + Vite, mobile-first; all data through one `BookingApi` interface with a `mockService` and an `httpService`.
-- **Contract:** `openapi.yml` (OpenAPI 3.1), validated in CI; API tests check every response against it.
-- **Backend:** Node.js + Express; routes → services (business rules) → repository interface.
-- **Storage:** in-memory repository first, then **Sequelize ORM** over `DATABASE_URL` (SQLite by default) — DBMS-agnostic.
-- Booking status: `pending` (new) → `confirmed` (by owner) or `cancelled`.
-- Automated tests for every business rule in section 4; CI on Node 22 and 24.
+## 7. Success criteria
 
-## 7. Milestones
-
-| # | Milestone | Result |
-|---|---|---|
-| M0 | Setup | Stack chosen, repo skeleton, CI running tests, local run instructions |
-| M1 | Auth | Phone + code sign-in, user roles |
-| M2 | Venues & schedule | Categories, venue list, resource schedule view with slot statuses |
-| M3 | Booking | Book, my bookings, cancel with 3-hour rule, double-booking protection |
-| M4 | Owner tools | Owner dashboard, confirm/cancel, block slots, venue settings |
-| M5 | Languages & polish | Kazakh/Russian UI, mobile layout check |
-| M6 | Pilot | Deploy, onboard 1–2 real venues per category, collect feedback |
-
-## 8. Success criteria for the pilot
-
-- 3–5 venues live.
-- At least 50 bookings made through the app in the first month.
-- Zero double bookings.
-- Owners say they no longer need the notebook.
-
-## 9. Risks
-
-| Risk | Mitigation |
-|---|---|
-| Owners keep taking phone bookings and forget to block slots | Owner can add a phone booking in 2 taps |
-| Customers don't trust a new app | Owner shares the link in their existing WhatsApp groups |
-| No-shows | Track no-shows per user; consider prepayment after MVP |
+- The core path works on the real API: create case → add evidence → add entities → link them → see the explained risk → generate a report.
+- Data survives a backend restart.
+- An investigator can never read another investigator's case.
+- Every `mvp` and `user-test-bug` issue is closed by QA after verification.

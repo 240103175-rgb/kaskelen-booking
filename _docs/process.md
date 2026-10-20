@@ -18,13 +18,14 @@ How work moves from the plan to merged code. GitHub issues are the only active b
 2. The plan was cut into small tasks in `_docs/tasks.md`, one section per task, and each task moved into a GitHub issue with `gh issue create`. The file was then deleted: issues are the backlog.
 3. Bugs found while actually running the app become `user-test-bug` issues.
 
-## Iterations (v1)
+## Iterations
 
-The first version (issues #2–#12) was a server-rendered prototype. v1 rebuilds it in the order the course requires, each iteration ending with a working app:
+Each iteration ends with a working app:
 
 | Iteration | Result |
 |---|---|
-| 1. Frontend + mockService | React app fully clickable on mock data, through one service interface |
+| 0. Specification | `_docs/plan.md`, process, roles, design references |
+| 1. Frontend + mockService | React app fully clickable on synthetic data, through one service interface |
 | 2. Contract | `openapi.yml` describes every endpoint, schema and error |
 | 3. Backend in memory | Express API implementing the contract with in-memory repositories |
 | 4. Connect | Frontend switches from `mockService` to `httpService` |
@@ -65,6 +66,6 @@ pick ─► groom (PM) ─► test cases (QA) ─► implement (Engineer) ─►
 ## Rules
 
 - One issue at a time; read the acceptance criteria before starting and again before closing.
-- Commit regularly; every commit message mentions the issue (`#23`).
+- Commit regularly; every commit message mentions the issue (`#5`).
 - Code reaches `main` through a pull request; nobody pushes to `main` directly.
 - Questions go into the issue as comments, so the history stays in one place.
