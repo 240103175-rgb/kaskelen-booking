@@ -1,12 +1,14 @@
 # Re:Trace
 
-[![CI](https://github.com/240103175-rgb/retrace/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/240103175-rgb/retrace/actions/workflows/ci.yml)
+[![CI](https://github.com/240103175-rgb/kaskelen-booking/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/240103175-rgb/kaskelen-booking/actions/workflows/ci.yml)
 
 **Re:Trace** helps organise an investigation of a suspected online scam — a fake job offer, a "safe delivery" link, a call "from the bank" — so that every conclusion can be traced back to the evidence behind it.
 
 Open a **case**, record **evidence** (messages, links, accounts, payments, observations), extract the **entities** (people, accounts, phones, links, cards, wallets), connect them with **relationships** backed by evidence, see them as a **graph**, get an **explainable risk assessment**, and produce an immutable **report**. Admins see statistics, all cases, roles and an audit log.
 
 > Re:Trace does not prove guilt, does not access anyone's accounts and does not verify the data entered. A risk score is an indicator, never proof.
+
+Issues and the full development history (PM → QA → engineer → QA engineer) live in the original repository: https://github.com/240103175-rgb/retrace
 
 **Stack:** React + TypeScript + Vite · Node.js + Express · Sequelize ORM + SQLite · OpenAPI 3.1 · Vitest, node:test · GitHub Actions.
 
