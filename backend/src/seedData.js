@@ -1,12 +1,9 @@
-// Demo data: one owner and venues in every category. Runs only when the database has no venues.
-// Names and addresses are made up for the demo.
-import { openDb } from './db.js';
-
+// Synthetic demo data. Names and addresses are made up.
+// Keep in sync with frontend/src/services/mockData.ts.
 export const DEMO_OWNER_PHONE = '+77010000001';
 
-// [category, name, address, description, open, close, dayPrice, eveningPrice, eveningStart, resources]
-// resources: [name, capacity]
-const VENUES = [
+// [category, name, address, description, open, close, dayPrice, eveningPrice, eveningStart, [[resource, capacity]]]
+export const SEED_VENUES = [
   ['football', 'Арена Қаскелең', 'Наурызбай батыр көшесі, 12', 'Жасанды шөбі бар екі жабық алаң, киім ауыстыратын бөлме және душ.', 8, 24, 8000, 12000, 18, [['1-алаң', 1], ['2-алаң', 1]]],
   ['football', 'Goal Park', 'Тәуелсіздік көшесі, 3', 'Мини-футбол және 7×7 алаңдары, кешке жарықтандыру.', 10, 24, 9000, 14000, 19, [['Мини-футбол 5×5', 1], ['Футбол 7×7', 1]]],
   ['barbershop', 'Sharp Barber', 'Абылай хан көшесі, 27', 'Ерлер шаш үлгісі, сақал күтімі, балаларға арналған қиу.', 10, 21, 4000, 5000, 18, [['Шебер Арман', 1], ['Шебер Дәулет', 1], ['Шебер Ерлан', 1]]],
@@ -24,27 +21,15 @@ const VENUES = [
   ['restaurant', 'Kaskelen Grill', 'Жамбыл көшесі, 22', 'Гриль, бургерлер және отбасылық кешкі ас. Брондау тегін.', 12, 24, 0, 0, 18, [['Терраса үстелі', 1], ['Зал үстелі (4 адам)', 1], ['Зал үстелі (8 адам)', 1]]],
 ];
 
-export function seed(db, now = Date.now()) {
-  if (db.prepare('SELECT COUNT(*) AS n FROM venues').get().n > 0) return false;
-
-  db.prepare("INSERT OR IGNORE INTO users (phone, name, role, created_at) VALUES (?, 'Ерлан', 'owner', ?)").run(DEMO_OWNER_PHONE, now);
-  const ownerId = db.prepare('SELECT id FROM users WHERE phone = ?').get(DEMO_OWNER_PHONE).id;
-
-  const insertVenue = db.prepare(
-    `INSERT INTO venues (category, name, address, description, open_hour, close_hour, day_price, evening_price, evening_start_hour, owner_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  );
-  const insertResource = db.prepare('INSERT INTO resources (venue_id, name, capacity) VALUES (?, ?, ?)');
-  db.exec('BEGIN');
-  for (const [category, name, address, description, open, close, day, evening, eveningStart, resources] of VENUES) {
-    const { lastInsertRowid } = insertVenue.run(category, name, address, description, open, close, day, evening, eveningStart, ownerId);
-    for (const [resourceName, capacity] of resources) insertResource.run(Number(lastInsertRowid), resourceName, capacity);
+/** Fills an empty repository with the demo owner and venues. Returns false if venues already exist. */
+export async function seed(repo, now = Date.now()) {
+  if ((await repo.countVenues()) > 0) return false;
+  const owner =
+    (await repo.findUserByPhone(DEMO_OWNER_PHONE)) ??
+    (await repo.createUser({ phone: DEMO_OWNER_PHONE, name: 'Ерлан', role: 'owner', lang: 'kk', createdAt: now }));
+  for (const [category, name, address, description, openHour, closeHour, dayPrice, eveningPrice, eveningStartHour, resources] of SEED_VENUES) {
+    const venue = await repo.createVenue({ category, name, address, description, openHour, closeHour, dayPrice, eveningPrice, eveningStartHour, ownerId: owner.id });
+    for (const [resourceName, capacity] of resources) await repo.createResource({ venueId: venue.id, name: resourceName, capacity });
   }
-  db.exec('COMMIT');
   return true;
-}
-
-if (import.meta.url === `file://${process.argv[1]}`) {
-  const db = openDb();
-  console.log(seed(db) ? 'Seeded demo venues.' : 'Database already has venues, nothing to do.');
 }

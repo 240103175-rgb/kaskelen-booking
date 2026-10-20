@@ -1,18 +1,23 @@
+import { fileURLToPath } from 'node:url';
 import { createApp } from './app.js';
-import { openDb } from './db.js';
-import { seed } from './seed.js';
+import { createMemoryRepository } from './repositories/memory.js';
+import { seed } from './seedData.js';
 
 const port = Number(process.env.PORT) || 3100;
 const isProduction = process.env.NODE_ENV === 'production';
 
-const db = openDb();
-if (!isProduction && seed(db)) console.log('Seeded demo venues.');
+const repo = createMemoryRepository();
+if (!isProduction && (await seed(repo))) console.log('Seeded demo venues.');
 
-const app = createApp({ db, showDevCode: !isProduction });
+const app = createApp({
+  repo,
+  devCodes: !isProduction,
+  staticDir: fileURLToPath(new URL('../../frontend/dist', import.meta.url)),
+});
 app.listen(port, (err) => {
   if (err) {
     console.error(`Cannot start on port ${port}: ${err.message}`);
     process.exit(1);
   }
-  console.log(`Kaskelen Booking is running on http://localhost:${port}`);
+  console.log(`Kaskelen Booking API (${repo.kind} storage) on http://localhost:${port}`);
 });

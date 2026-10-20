@@ -1,276 +1,97 @@
+// HTTP layer: routes, auth, JSON errors. No business rules here — those live in services/.
 import express from 'express';
-import { fileURLToPath } from 'node:url';
-import { AuthError, endSession, requestCode, SESSION_TTL_MS, userFromSession, verifyCode } from './auth.js';
-import {
-  blockSlot,
-  BookingError,
-  cancelBooking,
-  confirmBooking,
-  createBooking,
-  getSchedule,
-  categoryCounts,
-  getVenue,
-  listResources,
-  listVenues,
-  ownedVenues,
-  unblockSlot,
-  updateVenueSettings,
-  userBookings,
-} from './booking.js';
-import { CATEGORY_IDS } from './categories.js';
-import { DEFAULT_LANG, hasKey, LANGS, translator } from './i18n.js';
-import { addDays, isValidDate, todayLocal } from './time.js';
-import * as views from './views.js';
-
-const BOOKING_WINDOW_DAYS = 13;
-const SESSION_COOKIE = 'sid';
-
-function parseCookies(header = '') {
-  return Object.fromEntries(
-    header
-      .split(';')
-      .map((part) => part.trim().split('='))
-      .filter(([k, v]) => k && v !== undefined)
-      .map(([k, ...v]) => [k, decodeURIComponent(v.join('='))]),
-  );
-}
-
-function safeNext(next) {
-  return typeof next === 'string' && next.startsWith('/') && !next.startsWith('//') ? next : '/';
-}
-
-function refererPath(req) {
-  try {
-    const url = new URL(req.get('referer'));
-    return safeNext(url.pathname + url.search);
-  } catch {
-    return '/';
-  }
-}
-
-function withFlash(url, kind, key) {
-  const [path, query = ''] = url.split('?');
-  const params = new URLSearchParams(query);
-  params.delete('ok');
-  params.delete('err');
-  params.set(kind, key);
-  return `${path}?${params}`;
-}
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { AppError } from './errors.js';
+import { createAuthService } from './services/auth.js';
+import { createBookingService } from './services/booking.js';
 
 /**
  * @param {object} options
- * @param {import('node:sqlite').DatabaseSync} options.db
+ * @param {object} options.repo repository (memory or sql)
  * @param {() => number} [options.now] clock, injectable for tests
- * @param {boolean} [options.showDevCode] show the login code on the page (never in production)
- * @param {(msg: string) => void} [options.log]
+ * @param {boolean} [options.devCodes] return the login code in the response (never in production)
+ * @param {string} [options.staticDir] built frontend to serve (frontend/dist)
  */
-export function createApp({ db, now = Date.now, showDevCode = false, log = console.log }) {
+export function createApp({ repo, now = Date.now, devCodes = false, log = console.log, staticDir = null }) {
+  const auth = createAuthService(repo, { now, log });
+  const booking = createBookingService(repo, { now });
   const app = express();
-  const secureCookies = process.env.NODE_ENV === 'production';
-
   app.disable('x-powered-by');
-  app.use(express.static(fileURLToPath(new URL('../public', import.meta.url))));
-  app.use(express.urlencoded({ extended: false, limit: '10kb' }));
+  app.use(express.json({ limit: '10kb' }));
 
-  app.use((req, res, next) => {
-    req.cookies = parseCookies(req.headers.cookie);
-    req.user = userFromSession(db, req.cookies[SESSION_COOKIE], now());
-    const lang = LANGS.includes(req.cookies.lang) ? req.cookies.lang : (req.user?.lang ?? DEFAULT_LANG);
-    const flash = (kind) => (typeof req.query[kind] === 'string' && hasKey(`${kind}_${req.query[kind]}`) ? req.query[kind] : null);
-    req.ctx = { lang, t: translator(lang), user: req.user, path: req.originalUrl, ok: flash('ok'), err: flash('err') };
-    res.set('X-Content-Type-Options', 'nosniff');
-    res.set('X-Frame-Options', 'DENY');
-    next();
-  });
-
-  const requireUser = (req, res, next) => {
-    if (!req.user) return res.redirect(`/login?next=${encodeURIComponent(refererPath(req))}`);
-    next();
-  };
-  const requireOwner = (req, res, next) => {
-    if (!req.user) return res.redirect('/login?next=/owner');
-    if (req.user.role !== 'owner' && req.user.role !== 'admin') return res.status(403).send(views.notFoundPage(req.ctx));
-    next();
-  };
-
-  // Runs an action and redirects back with a translated success or error message.
-  const act = (fn) => (req, res) => {
-    const back = refererPath(req);
+  const api = express.Router();
+  const wrap = (fn) => async (req, res, next) => {
     try {
-      const { ok, to } = fn(req);
-      res.redirect(withFlash(to ?? back, 'ok', ok));
+      await fn(req, res);
     } catch (err) {
-      if (err instanceof BookingError || err instanceof AuthError) return res.redirect(withFlash(back, 'err', err.code));
-      throw err;
+      next(err);
     }
   };
+  const bearer = (req) => /^Bearer (.+)$/.exec(req.get('authorization') ?? '')?.[1] ?? null;
 
-  const dateParam = (req) => {
-    const today = todayLocal(now());
-    const maxDate = addDays(today, BOOKING_WINDOW_DAYS);
-    const d = req.query.date;
-    const date = isValidDate(d) && d >= today && d <= maxDate ? d : today;
-    return { date, today, maxDate };
-  };
-
-  app.get('/', (req, res) => {
-    const activeCategory = CATEGORY_IDS.includes(req.query.category) ? req.query.category : null;
-    const query = typeof req.query.q === 'string' ? req.query.q.slice(0, 100) : '';
-    res.send(
-      views.homePage(req.ctx, {
-        venues: listVenues(db, { category: activeCategory, query }),
-        counts: categoryCounts(db),
-        activeCategory,
-        query,
-      }),
-    );
-  });
-
-  app.get('/venues/:id', (req, res) => {
-    const venue = getVenue(db, Number(req.params.id));
-    if (!venue) return res.status(404).send(views.notFoundPage(req.ctx));
-    const dates = dateParam(req);
-    const resources = listResources(db, venue.id).map((r) => ({
-      ...r,
-      slots: getSchedule(db, r.id, dates.date, now(), req.user?.id ?? null),
-    }));
-    res.send(views.venuePage(req.ctx, { venue, resources, ...dates }));
-  });
-
-  app.post(
-    '/bookings',
-    requireUser,
-    act((req) => {
-      const { resourceId, date, hour } = req.body;
-      createBooking(db, { resourceId: Number(resourceId), userId: req.user.id, date, hour, now: now() });
-      return { ok: 'booked', to: '/me' };
-    }),
-  );
-
-  app.post(
-    '/bookings/:id/cancel',
-    requireUser,
-    act((req) => {
-      cancelBooking(db, { bookingId: Number(req.params.id), user: req.user, now: now() });
-      return { ok: 'cancelled' };
-    }),
-  );
-
-  app.get('/me', (req, res) => {
-    if (!req.user) return res.redirect('/login?next=/me');
-    res.send(views.myBookingsPage(req.ctx, { bookings: userBookings(db, req.user.id), now: now() }));
-  });
-
-  app.get('/login', (req, res) => {
-    if (req.user) return res.redirect(safeNext(req.query.next));
-    res.send(views.loginPage(req.ctx, { next: safeNext(req.query.next) }));
-  });
-
-  app.post('/login', (req, res) => {
-    const next = safeNext(req.body.next);
+  api.use(async (req, _res, next) => {
     try {
-      const { phone, code } = requestCode(db, req.body.phone, now(), log);
-      res.send(views.verifyPage(req.ctx, { next, phone, devCode: showDevCode ? code : null }));
+      req.token = bearer(req);
+      req.user = await auth.userFromToken(req.token);
+      next();
     } catch (err) {
-      if (!(err instanceof AuthError)) throw err;
-      res.status(400).send(views.loginPage({ ...req.ctx, err: err.code }, { next, phone: req.body.phone }));
+      next(err);
     }
   });
 
-  app.post('/login/verify', (req, res) => {
-    const next = safeNext(req.body.next);
-    try {
-      const { user, token } = verifyCode(db, req.body.phone, req.body.code, now());
-      const name = String(req.body.name ?? '').trim().slice(0, 60);
-      if (name && !user.name) db.prepare('UPDATE users SET name = ? WHERE id = ?').run(name, user.id);
-      if (LANGS.includes(req.cookies.lang)) db.prepare('UPDATE users SET lang = ? WHERE id = ?').run(req.cookies.lang, user.id);
-      res.cookie(SESSION_COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: secureCookies, maxAge: SESSION_TTL_MS });
-      res.redirect(withFlash(next, 'ok', 'welcome'));
-    } catch (err) {
-      if (!(err instanceof AuthError)) throw err;
-      const ctx = { ...req.ctx, err: err.code };
-      if (err.code === 'too_many_attempts') return res.status(400).send(views.loginPage(ctx, { next, phone: req.body.phone }));
-      res.status(400).send(views.verifyPage(ctx, { next, phone: req.body.phone, devCode: null }));
-    }
-  });
+  const requireUser = (req, _res, next) => (req.user ? next() : next(new AppError('unauthorized', 401)));
 
-  app.post('/logout', (req, res) => {
-    endSession(db, req.cookies[SESSION_COOKIE]);
-    res.clearCookie(SESSION_COOKIE);
-    res.redirect('/');
-  });
+  api.get('/categories', wrap(async (_req, res) => res.json(await booking.categoryCounts())));
+  api.get('/venues', wrap(async (req, res) => res.json(await booking.listVenues({ category: req.query.category || null, q: req.query.q ?? '' }))));
+  api.get('/venues/:id', wrap(async (req, res) => res.json(await booking.getVenue(req.params.id))));
+  api.get('/venues/:id/schedule', wrap(async (req, res) => res.json(await booking.publicSchedule(req.params.id, req.query.date, req.user))));
 
-  app.get('/lang/:lang', (req, res) => {
-    const lang = LANGS.includes(req.params.lang) ? req.params.lang : DEFAULT_LANG;
-    res.cookie('lang', lang, { sameSite: 'lax', maxAge: 365 * 24 * 60 * 60 * 1000 });
-    if (req.user) db.prepare('UPDATE users SET lang = ? WHERE id = ?').run(lang, req.user.id);
-    res.redirect(safeNext(req.query.next));
-  });
-
-  app.get('/owner', requireOwner, (req, res) => {
-    const dates = dateParam(req);
-    const venues = ownedVenues(db, req.user);
-    const selected = venues.find((v) => v.id === Number(req.query.venue)) ?? venues[0];
-    const venue = selected && {
-      ...selected,
-      resources: listResources(db, selected.id).map((r) => ({ ...r, slots: getSchedule(db, r.id, dates.date, now()) })),
-    };
-    res.send(views.ownerPage(req.ctx, { venues, venue, ...dates }));
-  });
-
-  app.post(
-    '/owner/bookings/:id/confirm',
-    requireOwner,
-    act((req) => {
-      confirmBooking(db, { bookingId: Number(req.params.id), user: req.user });
-      return { ok: 'confirmed' };
+  api.post(
+    '/auth/code',
+    wrap(async (req, res) => {
+      const { phone, code, expiresInSeconds } = await auth.requestCode(req.body?.phone);
+      res.json({ phone, expiresInSeconds, ...(devCodes ? { devCode: code } : {}) });
     }),
   );
+  api.post('/auth/verify', wrap(async (req, res) => res.json(await auth.verifyCode(req.body?.phone, req.body?.code, req.body?.name))));
+  api.post('/auth/logout', requireUser, wrap(async (req, res) => (await auth.logout(req.token), res.status(204).end())));
 
-  app.post(
-    '/owner/bookings/:id/cancel',
-    requireOwner,
-    act((req) => {
-      cancelBooking(db, { bookingId: Number(req.params.id), user: req.user, now: now() });
-      return { ok: 'cancelled' };
-    }),
-  );
+  api.get('/me', requireUser, (req, res) => res.json(userDto(req.user)));
+  api.patch('/me', requireUser, wrap(async (req, res) => res.json(userDto(await auth.updateMe(req.user, req.body ?? {})))));
+  api.get('/me/bookings', requireUser, wrap(async (req, res) => res.json(await booking.myBookings(req.user))));
 
-  app.post(
-    '/owner/blocks',
-    requireOwner,
-    act((req) => {
-      const { resourceId, date, hour } = req.body;
-      blockSlot(db, { resourceId: Number(resourceId), date, hour, user: req.user });
-      return { ok: 'blocked' };
-    }),
-  );
+  api.post('/bookings', requireUser, wrap(async (req, res) => res.status(201).json(await booking.createBooking(req.user, req.body ?? {}))));
+  api.post('/bookings/:id/cancel', requireUser, wrap(async (req, res) => res.json(await booking.cancelBooking(req.user, req.params.id))));
 
-  app.post(
-    '/owner/blocks/:id/delete',
-    requireOwner,
-    act((req) => {
-      unblockSlot(db, { blockId: Number(req.params.id), user: req.user });
-      return { ok: 'unblocked' };
-    }),
-  );
+  api.get('/owner/venues', requireUser, wrap(async (req, res) => res.json(await booking.ownerVenues(req.user))));
+  api.patch('/owner/venues/:id', requireUser, wrap(async (req, res) => res.json(await booking.updateVenueSettings(req.user, req.params.id, req.body))));
+  api.get('/owner/venues/:id/schedule', requireUser, wrap(async (req, res) => res.json(await booking.ownerSchedule(req.user, req.params.id, req.query.date))));
+  api.post('/owner/bookings/:id/confirm', requireUser, wrap(async (req, res) => res.json(await booking.confirmBooking(req.user, req.params.id))));
+  api.post('/owner/blocks', requireUser, wrap(async (req, res) => res.status(201).json(await booking.blockSlot(req.user, req.body ?? {}))));
+  api.delete('/owner/blocks/:id', requireUser, wrap(async (req, res) => (await booking.unblockSlot(req.user, req.params.id), res.status(204).end())));
 
-  app.get('/owner/venues/:id/settings', requireOwner, (req, res) => {
-    const venue = ownedVenues(db, req.user).find((v) => v.id === Number(req.params.id));
-    if (!venue) return res.status(404).send(views.notFoundPage(req.ctx));
-    res.send(views.settingsPage(req.ctx, venue));
+  api.use((_req, _res, next) => next(new AppError('not_found', 404)));
+
+  app.use('/api/v1', api);
+
+  if (staticDir && existsSync(staticDir)) {
+    app.use(express.static(staticDir));
+    // Single-page app: every other GET returns index.html and the router takes over.
+    app.get(/^(?!\/api\/).*/, (_req, res) => res.sendFile(join(staticDir, 'index.html')));
+  }
+
+  // eslint-disable-next-line no-unused-vars
+  app.use((err, _req, res, _next) => {
+    if (err instanceof AppError) return res.status(err.status).json({ error: { code: err.code, message: err.message } });
+    if (err?.type === 'entity.parse.failed') return res.status(400).json({ error: { code: 'validation_error', message: 'Invalid JSON' } });
+    console.error(err);
+    res.status(500).json({ error: { code: 'server_error', message: 'Internal error' } });
   });
-
-  app.post(
-    '/owner/venues/:id/settings',
-    requireOwner,
-    act((req) => {
-      updateVenueSettings(db, { venueId: Number(req.params.id), user: req.user, settings: req.body });
-      return { ok: 'saved', to: `/owner?venue=${Number(req.params.id)}` };
-    }),
-  );
-
-  app.use((req, res) => res.status(404).send(views.notFoundPage(req.ctx)));
 
   return app;
+}
+
+export function userDto(u) {
+  return { id: u.id, phone: u.phone, name: u.name ?? null, role: u.role, lang: u.lang };
 }
