@@ -12,7 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         node: [22, 24]
-    name: npm test (Node ${{ matrix.node }})
+    name: Node ${{ matrix.node }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,4 +20,11 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
-      - run: npm test
+      - name: Validate OpenAPI contract
+        run: npm run validate:api
+      - name: Backend tests (memory + SQLite, API contract)
+        run: npm test -w backend
+      - name: Frontend tests
+        run: npm test -w frontend
+      - name: Frontend typecheck and build
+        run: npm run build

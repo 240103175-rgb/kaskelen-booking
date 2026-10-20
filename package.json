@@ -14,6 +14,7 @@
     "dev": "npm run dev -w backend & npm run dev -w frontend",
     "build": "npm run build -w frontend",
     "start": "npm start -w backend",
-    "test": "npm test -w backend && npm test -w frontend"
+    "test": "npm test -w backend && npm test -w frontend",
+    "validate:api": "npm run validate:api -w backend"
   }
 }
