@@ -14,7 +14,9 @@
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "sequelize": "^6.37.5",
+    "sqlite3": "^5.1.7"
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "^10.1.1",

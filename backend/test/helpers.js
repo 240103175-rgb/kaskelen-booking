@@ -1,4 +1,5 @@
 import { createMemoryRepository } from '../src/repositories/memory.js';
+import { createSqlRepository } from '../src/repositories/sql.js';
 import { seed } from '../src/seedData.js';
 import { localToUtc } from '../src/time.js';
 
@@ -10,6 +11,7 @@ export const NOW = localToUtc(TODAY, 10);
 /** Storage implementations every service and API test runs against. */
 export const REPOSITORIES = {
   memory: async () => createMemoryRepository(),
+  sqlite: () => createSqlRepository('sqlite::memory:'),
 };
 
 export async function setup(makeRepo = REPOSITORIES.memory) {
