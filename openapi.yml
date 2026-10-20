@@ -1,0 +1,443 @@
+openapi: 3.1.0
+info:
+  title: Kaskelen Booking API
+  version: 1.0.0
+  description: |
+    Book local services in Kaskelen by the hour. All times are UTC ISO-8601 instants;
+    `date` values are local Asia/Almaty dates (YYYY-MM-DD) and `hour` is the local hour (0–23).
+    Errors always use the `Error` schema; `error.code` is a stable machine key the UI translates.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+
+paths:
+  /categories:
+    get:
+      summary: Venue count per category
+      security: []
+      responses:
+        '200':
+          description: Eight categories in a fixed order
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/CategoryCount' } }
+
+  /venues:
+    get:
+      summary: List venues
+      security: []
+      parameters:
+        - { name: category, in: query, schema: { $ref: '#/components/schemas/CategoryId' } }
+        - { name: q, in: query, description: 'Case-insensitive search in name, address and description', schema: { type: string, maxLength: 100 } }
+      responses:
+        '200':
+          description: Venues sorted by name
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/VenueSummary' } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /venues/{venueId}:
+    get:
+      summary: Venue with its resources
+      security: []
+      parameters: [{ $ref: '#/components/parameters/VenueId' }]
+      responses:
+        '200':
+          description: Venue
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Venue' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /venues/{venueId}/schedule:
+    get:
+      summary: Slots of every resource for one day
+      description: Public. With a token, slots booked by the caller have `mine = true`.
+      security: [{}, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/VenueId' }
+        - { $ref: '#/components/parameters/Date' }
+      responses:
+        '200':
+          description: Schedule
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Schedule' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /auth/code:
+    post:
+      summary: Request a one-time login code
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties: { phone: { type: string, maxLength: 30, examples: ['+7 701 234 56 78'] } }
+      responses:
+        '200':
+          description: Code issued (printed in the server log; returned as devCode outside production)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeRequest' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooMany' }
+
+  /auth/verify:
+    post:
+      summary: Exchange the code for a session token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, code]
+              properties:
+                phone: { type: string, maxLength: 30 }
+                code: { type: string, pattern: '^[0-9]{6}$' }
+                name: { type: string, maxLength: 60 }
+      responses:
+        '200':
+          description: Signed in
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooMany' }
+
+  /auth/logout:
+    post:
+      summary: End the current session
+      responses:
+        '204': { description: Signed out }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me:
+    get:
+      summary: Current user
+      responses:
+        '200': { description: User, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    patch:
+      summary: Update name or language
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 60 }
+                lang: { $ref: '#/components/schemas/Lang' }
+      responses:
+        '200': { description: User, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/bookings:
+    get:
+      summary: Bookings of the current user, newest start first
+      responses:
+        '200':
+          description: Bookings
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Booking' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /bookings:
+    post:
+      summary: Book one hour of a resource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SlotRef' }
+      responses:
+        '201': { description: Created (status pending), content: { application/json: { schema: { $ref: '#/components/schemas/Booking' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /bookings/{bookingId}/cancel:
+    post:
+      summary: Cancel a booking
+      description: The customer until 3 hours before start (`too_late` after that); the venue owner at any time.
+      parameters: [{ $ref: '#/components/parameters/BookingId' }]
+      responses:
+        '200': { description: Cancelled, content: { application/json: { schema: { $ref: '#/components/schemas/Booking' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /owner/venues:
+    get:
+      summary: Venues the caller manages (all for admin)
+      responses:
+        '200':
+          description: Venues
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/VenueSummary' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /owner/venues/{venueId}:
+    patch:
+      summary: Update opening hours and prices
+      parameters: [{ $ref: '#/components/parameters/VenueId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VenueSettings' }
+      responses:
+        '200': { description: Updated, content: { application/json: { schema: { $ref: '#/components/schemas/VenueSummary' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /owner/venues/{venueId}/schedule:
+    get:
+      summary: Schedule with the bookings and customer contacts in every slot
+      parameters:
+        - { $ref: '#/components/parameters/VenueId' }
+        - { $ref: '#/components/parameters/Date' }
+      responses:
+        '200': { description: Schedule, content: { application/json: { schema: { $ref: '#/components/schemas/Schedule' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /owner/bookings/{bookingId}/confirm:
+    post:
+      summary: Confirm a pending booking
+      parameters: [{ $ref: '#/components/parameters/BookingId' }]
+      responses:
+        '200': { description: Confirmed, content: { application/json: { schema: { $ref: '#/components/schemas/Booking' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /owner/blocks:
+    post:
+      summary: Close a free hour
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SlotRef' }
+      responses:
+        '201': { description: Blocked, content: { application/json: { schema: { $ref: '#/components/schemas/Block' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /owner/blocks/{blockId}:
+    delete:
+      summary: Reopen a blocked hour
+      parameters:
+        - { name: blockId, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '204': { description: Removed }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+
+  parameters:
+    VenueId: { name: venueId, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    BookingId: { name: bookingId, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    Date:
+      name: date
+      in: query
+      description: Local date; outside today … today+13 or invalid falls back to today
+      schema: { type: string, format: date }
+
+  responses:
+    BadRequest: { description: 'invalid_phone, wrong_code, invalid_slot, past_slot, invalid_settings, validation_error', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    Unauthorized: { description: unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    Forbidden: { description: forbidden, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    NotFound: { description: not_found, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    Conflict: { description: 'taken, already_booked, blocked_slot, too_late, already_cancelled, invalid_status', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    TooMany: { description: 'too_soon, too_many_attempts', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [invalid_phone, wrong_code, too_many_attempts, too_soon, unauthorized, forbidden, not_found, invalid_slot, past_slot, blocked_slot, taken, already_booked, too_late, already_cancelled, invalid_status, invalid_settings, validation_error, server_error]
+            message: { type: string }
+
+    Lang: { type: string, enum: [kk, ru] }
+    Role: { type: string, enum: [player, owner, admin] }
+    CategoryId: { type: string, enum: [football, barbershop, beauty, massage, pool, sauna, gym, restaurant] }
+    BookingStatus: { type: string, enum: [pending, confirmed, cancelled] }
+
+    User:
+      type: object
+      required: [id, phone, name, role, lang]
+      properties:
+        id: { type: integer }
+        phone: { type: string, pattern: '^\+77[0-9]{9}$' }
+        name: { type: [string, 'null'] }
+        role: { $ref: '#/components/schemas/Role' }
+        lang: { $ref: '#/components/schemas/Lang' }
+
+    CodeRequest:
+      type: object
+      required: [phone, expiresInSeconds]
+      properties:
+        phone: { type: string, pattern: '^\+77[0-9]{9}$' }
+        expiresInSeconds: { type: integer }
+        devCode: { type: string, pattern: '^[0-9]{6}$', description: Only when NODE_ENV is not production }
+
+    Session:
+      type: object
+      required: [token, user]
+      properties:
+        token: { type: string, minLength: 32 }
+        user: { $ref: '#/components/schemas/User' }
+
+    CategoryCount:
+      type: object
+      required: [id, venueCount]
+      properties:
+        id: { $ref: '#/components/schemas/CategoryId' }
+        venueCount: { type: integer, minimum: 0 }
+
+    VenueSettings:
+      type: object
+      required: [openHour, closeHour, dayPrice, eveningPrice, eveningStartHour]
+      properties:
+        openHour: { type: integer, minimum: 0, maximum: 23 }
+        closeHour: { type: integer, minimum: 1, maximum: 24 }
+        dayPrice: { type: integer, minimum: 0, maximum: 1000000 }
+        eveningPrice: { type: integer, minimum: 0, maximum: 1000000 }
+        eveningStartHour: { type: integer, minimum: 0, maximum: 24 }
+
+    VenueSummary:
+      allOf:
+        - $ref: '#/components/schemas/VenueSettings'
+        - type: object
+          required: [id, category, name, address, description, resourceCount]
+          properties:
+            id: { type: integer }
+            category: { $ref: '#/components/schemas/CategoryId' }
+            name: { type: string }
+            address: { type: string }
+            description: { type: [string, 'null'] }
+            resourceCount: { type: integer, minimum: 0 }
+
+    Resource:
+      type: object
+      required: [id, venueId, name, capacity]
+      properties:
+        id: { type: integer }
+        venueId: { type: integer }
+        name: { type: string }
+        capacity: { type: integer, minimum: 1 }
+
+    Venue:
+      allOf:
+        - $ref: '#/components/schemas/VenueSummary'
+        - type: object
+          required: [resources]
+          properties:
+            resources: { type: array, items: { $ref: '#/components/schemas/Resource' } }
+
+    SlotBooking:
+      type: object
+      required: [id, status, customerName, customerPhone]
+      properties:
+        id: { type: integer }
+        status: { $ref: '#/components/schemas/BookingStatus' }
+        customerName: { type: [string, 'null'] }
+        customerPhone: { type: string }
+
+    Slot:
+      type: object
+      required: [hour, startAt, price, status, left, mine, blockId]
+      properties:
+        hour: { type: integer, minimum: 0, maximum: 23 }
+        startAt: { type: string, format: date-time }
+        price: { type: integer, minimum: 0 }
+        status: { type: string, enum: [free, full, blocked, past] }
+        left: { type: integer, minimum: 0 }
+        mine: { type: boolean }
+        blockId: { type: [integer, 'null'] }
+        bookings: { type: array, items: { $ref: '#/components/schemas/SlotBooking' }, description: Owner schedule only }
+
+    Schedule:
+      type: object
+      required: [venueId, date, today, maxDate, resources]
+      properties:
+        venueId: { type: integer }
+        date: { type: string, format: date }
+        today: { type: string, format: date }
+        maxDate: { type: string, format: date }
+        resources:
+          type: array
+          items:
+            type: object
+            required: [resource, slots]
+            properties:
+              resource: { $ref: '#/components/schemas/Resource' }
+              slots: { type: array, items: { $ref: '#/components/schemas/Slot' } }
+
+    SlotRef:
+      type: object
+      required: [resourceId, date, hour]
+      properties:
+        resourceId: { type: integer, minimum: 1 }
+        date: { type: string }
+        hour: { type: number }
+
+    Booking:
+      type: object
+      required: [id, resourceId, resourceName, venueId, venueName, venueAddress, category, startAt, date, hour, price, status, createdAt]
+      properties:
+        id: { type: integer }
+        resourceId: { type: integer }
+        resourceName: { type: string }
+        venueId: { type: integer }
+        venueName: { type: string }
+        venueAddress: { type: string }
+        category: { $ref: '#/components/schemas/CategoryId' }
+        startAt: { type: string, format: date-time }
+        date: { type: string, format: date }
+        hour: { type: integer }
+        price: { type: integer }
+        status: { $ref: '#/components/schemas/BookingStatus' }
+        createdAt: { type: string, format: date-time }
+
+    Block:
+      type: object
+      required: [id, resourceId, startAt]
+      properties:
+        id: { type: integer }
+        resourceId: { type: integer }
+        startAt: { type: string, format: date-time }
