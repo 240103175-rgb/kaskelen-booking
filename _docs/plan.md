@@ -49,13 +49,14 @@ Online payment, real SMS/WhatsApp messages, reviews, team finder, services longe
 
 ## 6. Technical approach
 
-- Single web application, mobile-first, server-rendered or SPA + API — decided in milestone M0 and recorded here.
-  **Decision (M0):** Node.js + Express 5, server-rendered HTML (no front-end framework), plain CSS.
-- Relational database (PostgreSQL or SQLite for local development).
-  **Decision (M0):** SQLite through the built-in `node:sqlite`; the capacity rule is a database trigger.
+See `_docs/architecture.md`. In short:
+
+- **Frontend:** React + TypeScript + Vite, mobile-first; all data through one `BookingApi` interface with a `mockService` and an `httpService`.
+- **Contract:** `openapi.yml` (OpenAPI 3.1), validated in CI; API tests check every response against it.
+- **Backend:** Node.js + Express; routes → services (business rules) → repository interface.
+- **Storage:** in-memory repository first, then **Sequelize ORM** over `DATABASE_URL` (SQLite by default) — DBMS-agnostic.
 - Booking status: `pending` (new) → `confirmed` (by owner) or `cancelled`.
-- Automated tests for every business rule in section 4.
-- Deployed to one small server; configuration through environment variables.
+- Automated tests for every business rule in section 4; CI on Node 22 and 24.
 
 ## 7. Milestones
 
