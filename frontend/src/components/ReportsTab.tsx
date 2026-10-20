@@ -51,6 +51,7 @@ export function ReportsTab({ caseData, owner }: CaseTabProps) {
                 {T.reportFrom} {dateTime(r.createdAt)}
               </Link>
               <span className="muted small">
+                {' · '}
                 {T.generatedBy}: {r.createdByName}
               </span>
             </li>

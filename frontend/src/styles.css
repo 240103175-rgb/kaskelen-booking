@@ -196,8 +196,8 @@ textarea { resize: vertical; }
 .node-card circle, .node-wallet circle { stroke: var(--high); }
 .node-link circle { stroke: var(--medium); }
 .node-person circle { stroke: var(--low); }
-.node-icon { font-size: 15px; fill: var(--text); pointer-events: none; }
-.node-label { font-size: 11px; fill: var(--text); pointer-events: none; }
+.node-icon { fill: var(--text); pointer-events: none; }
+.node-label { fill: var(--text); pointer-events: none; }
 .graph-panel { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; font-size: .9rem; }
 .graph-panel ul { padding-left: 18px; margin: 0; display: grid; gap: 6px; }
 

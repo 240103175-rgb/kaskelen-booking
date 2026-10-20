@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ENTITY_ICON, ENTITY_TYPE, RELATIONSHIP, T } from '../lib/text';
 import { useAsync } from '../lib/useAsync';
 import type { CaseTabProps } from '../pages/CasePage';
@@ -22,7 +22,24 @@ export function layout(graph: Graph) {
   );
 }
 
+const NARROW = '(max-width: 760px)';
+
+/** True on phone-width screens, where the SVG is scaled down ~2× (#31). */
+function useNarrow(): boolean {
+  const query = () => typeof window.matchMedia === 'function' && window.matchMedia(NARROW).matches;
+  const [narrow, setNarrow] = useState(query);
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia(NARROW);
+    const on = () => setNarrow(mq.matches);
+    mq.addEventListener?.('change', on);
+    return () => mq.removeEventListener?.('change', on);
+  }, []);
+  return narrow;
+}
+
 export function GraphTab({ caseData }: CaseTabProps) {
+  const narrow = useNarrow();
   const api = useApi();
   const graph = useAsync(() => api.graph(caseData.id), [api, caseData.id, caseData.updatedAt]);
   const [selected, setSelected] = useState<number | null>(null);
@@ -34,7 +51,10 @@ export function GraphTab({ caseData }: CaseTabProps) {
   const pos = layout(g);
   const node = g.nodes.find((x) => x.id === selected) ?? null;
   const label = (id: number) => g.nodes.find((x) => x.id === id)?.label ?? '?';
-  const small = g.nodes.length > 14;
+  // Edge captions only when there is room: not on phones, not on crowded graphs.
+  const captions = !narrow && g.nodes.length <= 14;
+  const labelSize = narrow ? 22 : 11;
+  const iconSize = narrow ? 22 : 15;
 
   return (
     <div className="graph-wrap">
@@ -58,7 +78,7 @@ export function GraphTab({ caseData }: CaseTabProps) {
           return (
             <g key={e.id} className={`edge${active ? ' is-active' : ''}`} data-testid="graph-edge">
               <line x1={x1} y1={y1} x2={x2} y2={y2} markerEnd="url(#arrow)" />
-              {!small && (
+              {captions && (
                 <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 6} textAnchor="middle">
                   {RELATIONSHIP[e.type]}
                 </text>
@@ -81,11 +101,11 @@ export function GraphTab({ caseData }: CaseTabProps) {
               data-testid="graph-node"
             >
               <circle r={NODE_R} />
-              <text className="node-icon" dy="5" textAnchor="middle">
+              <text className="node-icon" dy={narrow ? 8 : 5} textAnchor="middle" fontSize={iconSize}>
                 {ENTITY_ICON[n.type]}
               </text>
-              <text className="node-label" dy={NODE_R + 14} textAnchor="middle">
-                {n.label.length > 22 ? `${n.label.slice(0, 21)}…` : n.label}
+              <text className="node-label" dy={NODE_R + (narrow ? 24 : 14)} textAnchor="middle" fontSize={labelSize}>
+                {n.label.length > (narrow ? 14 : 22) ? `${n.label.slice(0, narrow ? 13 : 21)}…` : n.label}
               </text>
             </g>
           );
