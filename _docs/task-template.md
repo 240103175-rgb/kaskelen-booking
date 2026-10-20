@@ -1,15 +1,17 @@
 # Task template
 
-Every GitHub issue goes through two shapes.
+Every GitHub issue goes through these shapes.
 
 ## 1. New task (as moved from `_docs/tasks.md`)
 
 ```markdown
-## <number>. <title>
+## Goal
 
-Goal: <one sentence>
+<one sentence: the end state>
 
-Description: <a few sentences of what is wanted>
+## Description
+
+<a few sentences of what is wanted>
 ```
 
 ## 2. Groomed task (rewritten by the PM before any code is written)
@@ -42,8 +44,37 @@ One or two sentences: the end state for the user when this is done.
 - Guidelines from `AGENTS.md` that matter here.
 ```
 
+## 3. Test cases (comment by QA, `_docs/team/qa.md`)
+
+```markdown
+## Test cases
+
+| # | Level | Case | Expected |
+|---|---|---|---|
+| 1 | API | POST /bookings on a full slot | 409, code `taken`, no row written |
+| 2 | Frontend | Click a free slot while signed out | navigates to /login?next=… |
+```
+
+## 4. Bug (`user-test-bug`)
+
+```markdown
+## Goal
+
+What should be true.
+
+## Description
+
+What happened while running the app.
+
+**Steps to reproduce**
+1. …
+
+**Expected** …
+**Actual** …
+```
+
 Rules for the PM:
 
 - Every acceptance criterion must be checkable by QA without asking anyone.
-- Every out-of-scope item links to an issue (create the follow-up if it does not exist).
+- Every out-of-scope item links to an issue (create a `post-mvp` follow-up if it does not exist).
 - Constraints name files and rules, not implementation steps.
