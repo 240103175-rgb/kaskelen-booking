@@ -2,12 +2,14 @@ import { nodeDeps } from '../src/crypto.js';
 import { createServices } from '../src/domain/services.js';
 import { DEMO_PASSWORD, seed } from '../src/domain/seedData.js';
 import { createMemoryRepository } from '../src/repositories/memory.js';
+import { createSqlRepository } from '../src/repositories/sql.js';
 
 export const NOW = Date.parse('2026-10-20T08:00:00Z');
 
 /** Storage implementations every service and API test runs against. */
 export const REPOSITORIES = {
   memory: async () => createMemoryRepository(),
+  sqlite: () => createSqlRepository('sqlite::memory:'),
 };
 
 export async function setup(makeRepo = REPOSITORIES.memory) {

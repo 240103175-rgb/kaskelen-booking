@@ -3,11 +3,13 @@ import { createApp } from './app.js';
 import { hashPassword } from './crypto.js';
 import { seed } from './domain/seedData.js';
 import { createMemoryRepository } from './repositories/memory.js';
+import { createSqlRepository } from './repositories/sql.js';
 
 const port = Number(process.env.PORT) || 3200;
 const isProduction = process.env.NODE_ENV === 'production';
 
-const repo = createMemoryRepository();
+// STORAGE=memory keeps everything in RAM; the default is Sequelize over DATABASE_URL (SQLite file).
+const repo = process.env.STORAGE === 'memory' ? createMemoryRepository() : await createSqlRepository();
 if (!isProduction && (await seed(repo, { hashPassword }))) console.log('Seeded synthetic demo data.');
 
 const app = createApp({ repo, staticDir: fileURLToPath(new URL('../../frontend/dist', import.meta.url)) });

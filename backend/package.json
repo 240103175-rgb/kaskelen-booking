@@ -11,7 +11,9 @@
     "validate:api": "node -e \"require('@apidevtools/swagger-parser').validate('../openapi.yml').then(()=>console.log('openapi.yml is valid'))\""
   },
   "dependencies": {
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "sequelize": "^6.37.5",
+    "sqlite3": "^5.1.7"
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "^10.1.1",
