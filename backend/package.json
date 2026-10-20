@@ -1,0 +1,27 @@
+{
+  "name": "@kaskelen/backend",
+  "version": "0.1.0",
+  "description": "Kaskelen Booking API",
+  "private": true,
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test test/*.test.js",
+    "validate:api": "node -e \"require('@apidevtools/swagger-parser').validate('../openapi.yml').then(()=>console.log('openapi.yml is valid'))\""
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "sequelize": "^6.37.5",
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "@apidevtools/swagger-parser": "^10.1.1",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  }
+}

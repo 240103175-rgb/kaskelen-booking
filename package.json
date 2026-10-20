@@ -1,20 +1,20 @@
 {
   "name": "kaskelen-booking",
-  "version": "0.1.0",
-  "description": "Book football pitches in Kaskelen by the hour",
+  "version": "1.0.0",
   "private": true,
-  "type": "module",
-  "main": "src/server.js",
+  "description": "Book local services in Kaskelen by the hour",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
   "engines": {
     "node": ">=22.13"
   },
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
-    "seed": "node src/seed.js",
-    "test": "node --test test/*.test.js"
-  },
-  "dependencies": {
-    "express": "^5.1.0"
+    "dev": "npm run dev -w backend & npm run dev -w frontend",
+    "build": "npm run build -w frontend",
+    "start": "npm start -w backend",
+    "test": "npm test -w backend && npm test -w frontend",
+    "validate:api": "npm run validate:api -w backend"
   }
 }
