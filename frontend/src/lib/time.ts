@@ -48,15 +48,22 @@ export function addDays(date: string, days: number): string {
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 }
 
+// Own tables instead of Intl: many browsers ship without Kazakh locale data (#40).
+const MONTHS: Record<Lang, string[]> = {
+  kk: ['қаңтар', 'ақпан', 'наурыз', 'сәуір', 'мамыр', 'маусым', 'шілде', 'тамыз', 'қыркүйек', 'қазан', 'қараша', 'желтоқсан'],
+  ru: ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'],
+};
+const WEEKDAYS: Record<Lang, string[]> = {
+  kk: ['жексенбі', 'дүйсенбі', 'сейсенбі', 'сәрсенбі', 'бейсенбі', 'жұма', 'сенбі'],
+  ru: ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'],
+};
+
+/** "20 қазан, сейсенбі" / "Вторник, 20 октября". */
 export function formatDate(date: string, lang: Lang): string {
   const [y, m, d] = date.split('-').map(Number);
-  const text = new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'kk-KZ', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    timeZone: 'UTC',
-  }).format(new Date(Date.UTC(y, m - 1, d)));
-  return text.charAt(0).toUpperCase() + text.slice(1);
+  const weekday = WEEKDAYS[lang][new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  const month = MONTHS[lang][m - 1];
+  return lang === 'ru' ? `${weekday}, ${d} ${month}` : `${d} ${month}, ${weekday}`;
 }
 
 export function formatHour(hour: number): string {
